@@ -11,6 +11,7 @@
     --accent-gold: #ffb300;
     --accent-red: #ff3d00;
     
+    /* Цвета подсветки кода */
     --syn-op: #38bdf8;
     --syn-com: #4ade80;
     --syn-lbl: #fb923c;
@@ -27,22 +28,37 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
-    width: 100%; height: 100%;
-    background: var(--bg-dark); color: var(--text-main);
-    font-family: var(--font-ui); overflow-x: hidden;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-dark);
+    color: var(--text-main);
+    font-family: var(--font-ui);
+    overflow-x: hidden;
 }
 
 .app-container {
-    display: flex; flex-direction: column;
-    height: 100vh; height: 100dvh; width: 100vw; overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    width: 100vw;
+    overflow: hidden;
 }
 
 /* 1. ШАПКА */
 .toolbar {
-    position: sticky; top: 0; z-index: 9999; flex-shrink: 0;
-    background: var(--panel-bg); border-bottom: 1px solid var(--border-color);
-    padding: 8px 14px; display: flex; align-items: center; justify-content: space-between;
-    gap: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    position: sticky;
+    top: 0;
+    z-index: 9999;
+    flex-shrink: 0;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
 }
 
 .toolbar-left { display: flex; align-items: center; gap: 10px; }
@@ -75,17 +91,35 @@ html, body {
 .nav-screen-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
 
 .hint-banner {
-    position: sticky; top: 52px; z-index: 9998;
-    background: rgba(41, 121, 255, 0.12); backdrop-filter: blur(8px);
-    border-bottom: 1px solid rgba(41, 121, 255, 0.2); padding: 7px 16px;
-    display: flex; align-items: center; gap: 8px; font-size: 0.84em; color: #cbd5e1; flex-shrink: 0;
+    position: sticky;
+    top: 52px;
+    z-index: 9998;
+    background: rgba(41, 121, 255, 0.12);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(41, 121, 255, 0.2);
+    padding: 7px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.84em;
+    color: #cbd5e1;
+    flex-shrink: 0;
 }
 .hint-icon { font-size: 1.1em; }
 .hint-text b { color: var(--accent-gold); }
 
-/* 2. СЕТКА 4 ПАНЕЛЕЙ */
+/* 2. СЕТКА 4 ПАНЕЛЕЙ (ДЕКСТОП: 4 КОЛОНКИ, ПЛАНШЕТ/ТЕЛЕФОН: 4 СЛАЙДА) */
 .slider-viewport { flex: 1; height: 100%; min-height: 0; overflow: hidden; }
-.slider-track { display: grid; grid-template-columns: 1.3fr 0.95fr 1fr 0.95fr; height: 100%; gap: 10px; padding: 10px; }
+
+/* На широких экранах 4 колонки помещаются одновременно */
+.slider-track {
+    display: grid;
+    grid-template-columns: 1.1fr 0.95fr 1fr 0.95fr;
+    height: 100%;
+    gap: 10px;
+    padding: 10px;
+}
+
 .slide-panel {
     background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 12px;
     display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden;
@@ -110,8 +144,11 @@ html, body {
 .btn-clear-code:hover { color: #fff; border-color: #fff; }
 .editor-status { font-size: 0.78em; color: var(--text-muted); display: flex; gap: 10px; }
 
-/* 3. РЕДАКТОР КОДА */
-.editor-wrapper { flex: 1; display: flex; height: 100%; min-height: 350px; background: #080a0f; position: relative; overflow: hidden; }
+/* 3. РЕДАКТОР С ТОЧНЫМ НАЛОЖЕНИЕМ */
+.editor-wrapper {
+    flex: 1; display: flex; height: 100%; min-height: 350px;
+    background: #080a0f; position: relative; overflow: hidden;
+}
 .line-gutter {
     width: 48px; height: 100%; padding: 10px 0; background: #06070a; border-right: 1px solid #1a1e28;
     user-select: none; overflow: hidden; flex-shrink: 0; font-family: var(--font-mono); font-size: 13px; line-height: var(--line-height);
@@ -129,14 +166,21 @@ html, body {
 .gutter-num { color: #4b5563; font-size: 0.9em; min-width: 16px; text-align: right; }
 .gutter-row.is-pc .gutter-num { color: #ffd600; font-weight: 700; }
 
-.editor-container { flex: 1; height: 100%; min-height: 350px; position: relative; overflow: hidden; }
+.editor-container {
+    flex: 1; height: 100%; min-height: 350px; position: relative; overflow: hidden;
+}
 
 pre#highlighting, textarea#asmCode, pre#highlighting code, pre#highlighting span {
     font-family: monospace, ui-monospace, 'Courier New' !important;
-    font-size: 14px !important; line-height: 22px !important;
-    font-weight: 400 !important; font-style: normal !important;
-    letter-spacing: 0px !important; word-spacing: 0px !important; tab-size: 4 !important;
-    -webkit-text-size-adjust: none !important; text-rendering: optimizeLegibility !important;
+    font-size: 14px !important;
+    line-height: 22px !important;
+    font-weight: 400 !important;
+    font-style: normal !important;
+    letter-spacing: 0px !important;
+    word-spacing: 0px !important;
+    tab-size: 4 !important;
+    -webkit-text-size-adjust: none !important;
+    text-rendering: optimizeLegibility !important;
 }
 
 pre#highlighting, textarea#asmCode {
@@ -166,46 +210,22 @@ pre#highlighting {
 .syn-kw   { color: var(--syn-kw);   font-weight: normal; }
 .syn-type { color: var(--syn-type); font-weight: normal; }
 
-/* 4. ПЛАТА ВВОДА-ВЫВОДА И СТИЛИ ДЛЯ ЗЕЛЕНОЙ ПЛАТЫ КНОПОК V1.1 */
+/* 4. ПЛАТА ВВОДА-ВЫВОДА */
 .board-scroll-area { flex: 1; height: 100%; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 .board-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; }
 .card-title { font-size: 0.86em; font-weight: 700; color: #fff; margin-bottom: 6px; }
 .board-note { font-size: 0.75em; color: var(--text-muted); margin-bottom: 10px; }
 
-/* Справочник распиновки сверху */
-.port-info-banner {
-    background: #121824; border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 12px;
+.btn-matrix { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.v-btn {
+    background: #141822; border: 2px solid #334155; color: #e2e8f0; padding: 12px 4px;
+    border-radius: 8px; font-size: 0.85em; font-weight: 800; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
-.port-info-grid {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 8px; font-size: 0.78em; color: var(--text-muted);
-}
-.port-info-grid span b { color: #fff; }
+.v-btn span { font-size: 0.7em; font-weight: 400; color: var(--text-muted); }
+.v-btn.latched { background: var(--accent-gold); color: #000; border-color: #fff; box-shadow: 0 0 14px rgba(255, 179, 0, 0.6); }
+.v-btn.latched span { color: #332200; font-weight: 700; }
 
-/* Зеленая плата кнопок V1.1 */
-.pcb-module-card {
-    background: #0f2318 !important; border: 2px solid #00e676 !important;
-    box-shadow: inset 0 0 20px rgba(0, 230, 118, 0.08);
-}
-.pcb-title { color: #00e676 !important; font-weight: 800; letter-spacing: 0.5px; }
-.btn-matrix-pushed { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.pcb-btn {
-    background: #141822; border: 2px solid #334155; color: #e2e8f0; padding: 8px 2px;
-    border-radius: 8px; font-size: 0.75em; font-weight: 800; cursor: pointer;
-    display: flex; flex-direction: column; align-items: center; gap: 4px;
-    transition: transform 0.1s ease;
-}
-.pcb-btn:active { transform: scale(0.95); }
-.pcb-btn .cap {
-    width: 14px; height: 14px; background: #ff3d00; border-radius: 50%;
-    box-shadow: 0 0 8px #ff3d00, inset 0 1px 2px rgba(255,255,255,0.5);
-    border: 1px solid #b22a00;
-}
-.pcb-btn.latched { background: #1b263b; border-color: var(--accent-gold); }
-.pcb-btn.latched .cap { background: #ffd600; box-shadow: 0 0 12px #ffd600; }
-.pcb-btn .lbl { font-size: 0.65em; font-weight: 600; color: var(--text-muted); }
-
-.port-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
-.port-header-row .card-title { margin-bottom: 0; }
+.port-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .port-selector-btns { display: flex; gap: 4px; }
 .port-btn {
     background: #141822; border: 1px solid var(--border-color); color: var(--text-muted);
@@ -214,14 +234,9 @@ pre#highlighting {
 .port-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
 
 .single-led { display: flex; align-items: center; gap: 8px; }
-/* СУПЕР-ЯРКИЙ СВЕТОДИОД L */
 .led-light { width: 22px; height: 22px; border-radius: 50%; background: #252b3b; border: 2px solid #3b455d; }
-.led-light.active-led-yellow {
-    background: #ffea00 !important;
-    box-shadow: 0 0 22px #ffea00, 0 0 8px #fff !important;
-    border-color: #fff !important;
-}
-.led-light.active-led-green { background: #00e676 !important; box-shadow: 0 0 18px #00e676, 0 0 6px #fff !important; border-color: #fff !important; }
+.led-light.active-led-yellow { background: #ffd600; box-shadow: 0 0 16px #ffd600, 0 0 4px #fff; border-color: #fff; }
+.led-light.active-led-green { background: #00e676 !important; box-shadow: 0 0 16px #00e676, 0 0 6px #fff !important; border-color: #fff !important; }
 .led-label { font-size: 0.8em; color: var(--text-muted); }
 
 .led-bar { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; text-align: center; }
@@ -236,16 +251,24 @@ pre#highlighting {
     border-radius: 6px; font-family: var(--font-mono); font-size: 0.82em; height: 80px; overflow-y: auto; white-space: pre-wrap;
 }
 
-/* 5. СТИЛИ КОНСТРУКТОРА СХЕМ */
-.circuit-add-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 4px; }
+/* 5. СТИЛИ КОНСТРУКТОРА СХЕМ (TOUCH-FRIENDLY) */
+.circuit-add-bar {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 4px;
+}
 .btn-add-comp {
-    background: #141822; border: 1px solid #334155; color: #fff; padding: 8px 4px;
-    border-radius: 6px; font-size: 0.8em; font-weight: 700; cursor: pointer; transition: all 0.15s ease;
+    background: #141822; border: 1px solid #334155; color: #fff;
+    padding: 8px 4px; border-radius: 6px; font-size: 0.8em; font-weight: 700; cursor: pointer;
+    transition: all 0.15s ease;
 }
 .btn-add-comp:hover { border-color: var(--accent-blue); background: #1c2333; }
 
-.circuit-bench { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; min-height: 120px; }
-.circuit-empty-hint { color: var(--text-muted); font-size: 0.8em; text-align: center; padding: 24px 8px; border: 1px dashed var(--border-color); border-radius: 8px; }
+.circuit-bench {
+    display: flex; flex-direction: column; gap: 8px; margin-top: 8px; min-height: 120px;
+}
+.circuit-empty-hint {
+    color: var(--text-muted); font-size: 0.8em; text-align: center; padding: 24px 8px;
+    border: 1px dashed var(--border-color); border-radius: 8px;
+}
 .circuit-item-card {
     background: #141822; border: 1px solid var(--border-color); border-radius: 8px;
     padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -253,21 +276,40 @@ pre#highlighting {
 .circuit-item-left { display: flex; align-items: center; gap: 10px; }
 .circuit-item-right { display: flex; align-items: center; gap: 6px; }
 
-.dyn-led { width: 26px; height: 26px; border-radius: 50%; background: #252b3b; border: 2px solid #3b455d; transition: all 0.1s ease; }
-.dyn-led.glow-red { background: #ff1744 !important; border-color: #fff !important; box-shadow: 0 0 18px #ff1744, 0 0 6px #fff !important; }
-.dyn-led.glow-green { background: #00e676 !important; border-color: #fff !important; box-shadow: 0 0 18px #00e676, 0 0 6px #fff !important; }
-.dyn-led.glow-yellow { background: #ffd600 !important; border-color: #fff !important; box-shadow: 0 0 18px #ffd600, 0 0 6px #fff !important; }
-.dyn-led.glow-blue { background: #2979ff !important; border-color: #fff !important; box-shadow: 0 0 18px #2979ff, 0 0 6px #fff !important; }
+/* Динамические светящиеся светодиоды в конструкторе */
+.dyn-led {
+    width: 26px; height: 26px; border-radius: 50%; background: #252b3b;
+    border: 2px solid #3b455d; transition: all 0.1s ease;
+}
+.dyn-led.glow-red { background: #ff1744 !important; border-color: #fff !important; box-shadow: 0 0 16px #ff1744, 0 0 6px #fff !important; }
+.dyn-led.glow-green { background: #00e676 !important; border-color: #fff !important; box-shadow: 0 0 16px #00e676, 0 0 6px #fff !important; }
+.dyn-led.glow-yellow { background: #ffd600 !important; border-color: #fff !important; box-shadow: 0 0 16px #ffd600, 0 0 6px #fff !important; }
+.dyn-led.glow-blue { background: #2979ff !important; border-color: #fff !important; box-shadow: 0 0 16px #2979ff, 0 0 6px #fff !important; }
 
-.dyn-btn { background: #1e293b; border: 2px solid #475569; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 0.78em; font-weight: 800; cursor: pointer; }
+/* Кнопка в конструкторе */
+.dyn-btn {
+    background: #1e293b; border: 2px solid #475569; color: #fff;
+    padding: 6px 12px; border-radius: 6px; font-size: 0.78em; font-weight: 800; cursor: pointer;
+}
 .dyn-btn.pressed { background: var(--accent-gold); color: #000; border-color: #fff; box-shadow: 0 0 12px rgba(255, 179, 0, 0.8); }
 
-.dyn-buzzer { width: 26px; height: 26px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+/* Зуммер */
+.dyn-buzzer {
+    width: 26px; height: 26px; border-radius: 50%; background: #1e293b; border: 2px solid #475569;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
 .dyn-buzzer.beep { background: #f59e0b; border-color: #fff; box-shadow: 0 0 14px #f59e0b; animation: buzz 0.15s infinite; }
 @keyframes buzz { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
 
-.circuit-pin-select { background: #080a0f; color: #38bdf8; border: 1px solid #334155; padding: 4px 6px; border-radius: 5px; font-size: 0.78em; font-weight: 700; outline: none; }
-.btn-del-comp { background: transparent; border: none; color: #ef4444; font-size: 1.1em; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+/* Выбор пина в конструкторе */
+.circuit-pin-select {
+    background: #080a0f; color: #38bdf8; border: 1px solid #334155;
+    padding: 4px 6px; border-radius: 5px; font-size: 0.78em; font-weight: 700; outline: none;
+}
+.btn-del-comp {
+    background: transparent; border: none; color: #ef4444; font-size: 1.1em;
+    cursor: pointer; padding: 2px 6px; border-radius: 4px;
+}
 .btn-del-comp:hover { background: rgba(239, 68, 68, 0.2); }
 
 /* 6. РЕГИСТРЫ И ДАМПЫ ОЗУ */
@@ -301,7 +343,7 @@ pre#highlighting {
 .dump-view-wide::-webkit-scrollbar, .board-scroll-area::-webkit-scrollbar, .cpu-scroll-area::-webkit-scrollbar { width: 6px; height: 6px; }
 .dump-view-wide::-webkit-scrollbar-thumb, .board-scroll-area::-webkit-scrollbar-thumb, .cpu-scroll-area::-webkit-scrollbar-thumb { background: #2b3346; border-radius: 4px; }
 
-/* 7. АДАПТАЦИЯ (4 СЛАЙДА) */
+/* 7. АДАПТАЦИЯ (ТЕЛЕФОН / ПЛАНШЕТ: 4 СЛАЙДА) */
 @media (max-width: 1200px) {
     .nav-screens { display: flex; }
     .slider-viewport { overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; height: 100%; flex: 1; }

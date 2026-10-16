@@ -15,10 +15,12 @@
                 <div class="select-wrapper">
                     <select id="exampleSelector" onchange="loadSelectedExample()">
                         <option value="empty">📄 Новый чистый файл</option>
+                        <!-- Программы на Си -->
                         <option value="c_zadanie5">⚡ Си: Кнопки-переключатели светодиодов (PD2..PD4)</option>
                         <option value="c_zadanie2">⚡ Си: Бегущий маятник (PD6, PD7)</option>
                         <option value="c_example2">⚡ Си: Мигающий светодиод L через счётчик</option>
                         <option value="c_example3">⚡ Си: Кнопка включает светодиод L</option>
+                        <!-- Программы на Ассемблере -->
                         <option value="sort_ram" selected>📝 Сортировка массива в ОЗУ (0x0100)</option>
                         <option value="button_led">📝 Кнопка включает светодиод L (PB5)</option>
                         <option value="btn_counter">📝 Счётчик по кнопкам (K4: +1, K5: -1)</option>
@@ -51,6 +53,7 @@
                 </div>
             </div>
 
+            <!-- МОБИЛЬНАЯ НАВИГАЦИЯ НА 4 ВКЛАДКИ -->
             <nav class="nav-screens">
                 <button type="button" class="nav-screen-btn active" onclick="scrollToSlide(0)">📝 Код</button>
                 <button type="button" class="nav-screen-btn" onclick="scrollToSlide(1)">💡 Плата</button>
@@ -94,50 +97,36 @@
                     </div>
                 </section>
 
-                <!-- ПАНЕЛЬ 2: ФИКСИРОВАННАЯ ПЛАТА С МОДУЛЕМ 8 КНОПОК И СУПЕР-ЯРКИМ LED -->
+                <!-- ПАНЕЛЬ 2: ФИКСИРОВАННАЯ ПЛАТА -->
                 <section class="slide-panel board-slide">
                     <div class="slide-header">
-                        <h2>💡 Arduino Uno (SMD) и плата кнопок</h2>
-                        <small style="color:var(--text-muted);">ATmega328P</small>
+                        <h2>💡 Стандартная плата ввода-вывода</h2>
+                        <small style="color:var(--text-muted);">Кнопки с фиксацией</small>
                     </div>
                     <div class="board-scroll-area">
-                        <!-- СПРАВОЧНИК ПОРТОВ (ПРОДУБЛИРОВАН СВЕРХУ) -->
-                        <div class="port-info-banner">
-                            <div class="card-title" style="color: var(--accent-gold); margin-bottom: 4px;">📌 Справочник распиновки портов</div>
-                            <div class="port-info-grid">
-                                <span><b>K1..K3:</b> PD2..PD4</span>
-                                <span><b>K4..K8:</b> PB0..PB4</span>
-                                <span><b>LED L:</b> PB5 (Pin 13)</span>
-                                <span><b>RX/TX:</b> PD0, PD1</span>
+                        <div class="board-card">
+                            <div class="card-title">Кнопочный модуль (K1..K8)</div>
+                            <p class="board-note">Кликните кнопку, чтобы зажать (0 на входе). Повторный клик — отжать (1).</p>
+                            <div class="btn-matrix">
+                                <button type="button" class="v-btn" id="vbtn_K1" onclick="toggleVButton('K1')">K1 <span>PD2</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K2" onclick="toggleVButton('K2')">K2 <span>PD3</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K3" onclick="toggleVButton('K3')">K3 <span>PD4</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K4" onclick="toggleVButton('K4')">K4 <span>PB0</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K5" onclick="toggleVButton('K5')">K5 <span>PB1</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K6" onclick="toggleVButton('K6')">K6 <span>PB2</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K7" onclick="toggleVButton('K7')">K7 <span>PB3</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K8" onclick="toggleVButton('K8')">K8 <span>PB4</span></button>
                             </div>
                         </div>
 
-                        <!-- ЗЕЛЕНАЯ ПЛАТА 8 КНОПОК V1.1 (КАК НА ФОТО) -->
-                        <div class="board-card pcb-module-card">
-                            <div class="card-title pcb-title">8 Push Buttons V1.1 (K1..K8)</div>
-                            <p class="board-note">Кликните по красной кнопке, чтобы зажать (0 на входе).</p>
-                            <div class="btn-matrix-pushed">
-                                <button type="button" class="pcb-btn" id="vbtn_K1" onclick="toggleVButton('K1')"><span class="cap"></span><span class="lbl">K1 (PD2)</span></button>
-                                <button type="button" class="pcb-btn" id="vbtn_K2" onclick="toggleVButton('K2')"><span class="cap"></span><span class="lbl">K2 (PD3)</span></button>
-                                <button type="button" class="pcb-btn" id="vbtn_K3" onclick="toggleVButton('K3')"><span class="cap"></span><span class="lbl">K3 (PD4)</span></button>
-                                <button type="button" class="pcb-btn" id="vbtn_K4" onclick="toggleVButton('K4')"><span class="cap"></span><span class="lbl">K4 (PB0)</span></button>
-                                <button type="button" class="pcb-btn" id="vbtn_K5" onclick="toggleVButton('K5')"><span class="cap"></span><span class="lbl">K5 (PB1)</span></button>
-                                <button type="button" class="pcb-btn" id="vbtn_K6" onclick="toggleVButton('K6')"><span class="cap"></span><span class="lbl">K6 (PB2)</span></button>
-                                <button type="button" class="pcb-btn" id="vbtn_K7" onclick="toggleVButton('K7')"><span class="cap"></span><span class="lbl">K7 (PB3)</span></button>
-                                <button type="button" class="pcb-btn" id="vbtn_K8" onclick="toggleVButton('K8')"><span class="cap"></span><span class="lbl">K8 (PB4)</span></button>
-                            </div>
-                        </div>
-
-                        <!-- СУПЕР-ЯРКИЙ СВЕТОДИОД L (PB5) -->
                         <div class="board-card uno-led-card">
                             <div class="card-title">Светодиод платы [L] (Вывод PB5 / Pin 13)</div>
                             <div class="single-led">
                                 <div class="led-light" id="ledPB5"></div>
-                                <span class="led-label">PB5 (Яркий LED)</span>
+                                <span class="led-label">PB5</span>
                             </div>
                         </div>
 
-                        <!-- ЛИНЕЙКА ПОРТОВ -->
                         <div class="board-card">
                             <div class="port-header-row">
                                 <div class="card-title" id="ledPortTitle">Линейка светодиодов (Порт D)</div>
@@ -169,13 +158,14 @@
                     </div>
                 </section>
 
-                <!-- ПАНЕЛЬ 3: КОНСТРУКТОР СХЕМ -->
+                <!-- ПАНЕЛЬ 3: НОВЫЙ МОБИЛЬНЫЙ КОНСТРУКТОР СХЕМ -->
                 <section class="slide-panel circuit-slide">
                     <div class="slide-header">
                         <h2>🛠️ Конструктор цепей</h2>
-                        <button type="button" class="btn-clear-code" onclick="clearCustomCircuit()" title="Очистить схему">🗑️</button>
+                        <button type="button" class="btn-clear-code" onclick="clearCustomCircuit()" title="Очистить схему">🗑️ Очистить</button>
                     </div>
                     <div class="board-scroll-area">
+                        <!-- Панель добавления компонентов -->
                         <div class="board-card">
                             <div class="card-title">Добавить деталь на макет</div>
                             <div class="circuit-add-bar">
@@ -188,6 +178,7 @@
                             </div>
                         </div>
 
+                        <!-- Рабочая зона подключенных компонентов -->
                         <div class="board-card">
                             <div class="card-title" id="circuitTitle">Подключенные компоненты (0)</div>
                             <p class="board-note">Выберите пин для каждой детали. Они работают в реальном времени с кодом!</p>
