@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=3.0, user-scalable=yes">
+    <title>AVR ATmega328P Web Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- ВЕРХНЯЯ СТРОКА УПРАВЛЕНИЯ -->
+        <header class="toolbar">
+            <div class="toolbar-left">
+                <div class="logo">⚡ <span>AVR Studio</span></div>
+                <div class="select-wrapper">
+                    <select id="exampleSelector" onchange="loadSelectedExample()">
+                        <option value="empty">📄 Новый чистый файл</option>
+                        <option value="c_zadanie5">⚡ Си: Кнопки-переключатели светодиодов (PD2..PD4)</option>
+                        <option value="c_zadanie2">⚡ Си: Бегущий маятник (PD6, PD7)</option>
+                        <option value="c_example2">⚡ Си: Мигающий светодиод L через счётчик</option>
+                        <option value="c_example3">⚡ Си: Кнопка включает светодиод L</option>
+                        <option value="sort_ram" selected>📝 Сортировка массива в ОЗУ (0x0100)</option>
+                        <option value="button_led">📝 Кнопка включает светодиод L (PB5)</option>
+                        <option value="btn_counter">📝 Счётчик по кнопкам (K4: +1, K5: -1)</option>
+                        <option value="led_blink">📝 Бегущий огонёк (Порт D)</option>
+                        <option value="fibonacci">📝 Числа Фибоначчи в памяти</option>
+                        <option value="uart_tx">📝 Отправка текста в терминал (UART)</option>
+                        <option value="example1_lab1">📝 Пересылка данных и стек (PUSH / POP)</option>
+                        <option value="example2_lab2">📝 Логические операции и флаги</option>
+                        <option value="example4_lab3">📝 Заполнение трёх массивов в ОЗУ</option>
+                        <option value="alu_flags">📝 Арифметика и флаги переполнения</option>
+                        <option value="test_all">📝 Комплексный тест: все команды и флаги SREG</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="toolbar-center">
+                <button type="button" id="btnStep" class="btn btn-step" onclick="cpuStep()" title="Шаг (F11)">
+                    <span>⏭</span> Шаг
+                </button>
+                <button type="button" id="btnRun" class="btn btn-run" onclick="toggleRun()" title="Пуск до останова">
+                    <span id="runIcon">▶</span> <span id="runText">Пуск</span>
+                </button>
+                <button type="button" id="btnReset" class="btn btn-reset" onclick="cpuReset()" title="Сбросить процессор">
+                    <span>🔄</span> Сброс
+                </button>
+                
+                <div class="speed-box">
+                    <input type="range" id="speedRange" min="1" max="100" value="40" oninput="updateSpeed(this.value)">
+                    <span id="speedVal">40 оп/с</span>
+                </div>
+            </div>
+
+            <nav class="nav-screens">
+                <button type="button" class="nav-screen-btn active" onclick="scrollToSlide(0)">📝 Код</button>
+                <button type="button" class="nav-screen-btn" onclick="scrollToSlide(1)">💡 Плата</button>
+                <button type="button" class="nav-screen-btn" onclick="scrollToSlide(2)">🛠️ Схема</button>
+                <button type="button" class="nav-screen-btn" onclick="scrollToSlide(3)">⚙️ ЦПУ</button>
+            </nav>
+        </header>
+
+        <!-- ПЛАШКА-ПОДСКАЗКА -->
+        <div class="hint-banner" id="hintBanner">
+            <span class="hint-icon">💡</span>
+            <div class="hint-text" id="hintText">Инструкция к выбранной программе...</div>
+        </div>
+
+        <!-- ОСНОВНАЯ ЗОНА -->
+        <main class="slider-viewport" id="sliderViewport">
+            <div class="slider-track">
+                
+                <!-- ПАНЕЛЬ 1: РЕДАКТОР КОДА -->
+                <section class="slide-panel editor-slide">
+                    <div class="slide-header">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <h2 id="editorTitle">📝 Редактор кода</h2>
+                            <div class="lang-switch-btns">
+                                <button type="button" class="lang-btn active" id="btnLangAsm" onclick="setEditorLang('asm')">ASM</button>
+                                <button type="button" class="lang-btn" id="btnLangC" onclick="setEditorLang('c')">C (Си)</button>
+                            </div>
+                            <button type="button" class="btn-clear-code" onclick="clearEditor()" title="Очистить код">🗑️</button>
+                        </div>
+                        <div class="editor-status">
+                            <span id="compilerStatus">Готов</span>
+                            <span id="cycleCounter">Такты: 0</span>
+                        </div>
+                    </div>
+                    <div class="editor-wrapper">
+                        <div class="line-gutter" id="lineGutter"></div>
+                        <div class="editor-container">
+                            <pre id="highlighting" aria-hidden="true"><code id="highlightingContent"></code></pre>
+                            <textarea id="asmCode" wrap="off" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Пишите код здесь..."></textarea>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ПАНЕЛЬ 2: ФИКСИРОВАННАЯ ПЛАТА С МОДУЛЕМ 8 КНОПОК И СУПЕР-ЯРКИМ LED -->
+                <section class="slide-panel board-slide">
+                    <div class="slide-header">
+                        <h2>💡 Arduino Uno (SMD) и плата кнопок</h2>
+                        <small style="color:var(--text-muted);">ATmega328P</small>
+                    </div>
+                    <div class="board-scroll-area">
+                        <!-- СПРАВОЧНИК ПОРТОВ (ПРОДУБЛИРОВАН СВЕРХУ) -->
+                        <div class="port-info-banner">
+                            <div class="card-title" style="color: var(--accent-gold); margin-bottom: 4px;">📌 Справочник распиновки портов</div>
+                            <div class="port-info-grid">
+                                <span><b>K1..K3:</b> PD2..PD4</span>
+                                <span><b>K4..K8:</b> PB0..PB4</span>
+                                <span><b>LED L:</b> PB5 (Pin 13)</span>
+                                <span><b>RX/TX:</b> PD0, PD1</span>
+                            </div>
+                        </div>
+
+                        <!-- ЗЕЛЕНАЯ ПЛАТА 8 КНОПОК V1.1 (КАК НА ФОТО) -->
+                        <div class="board-card pcb-module-card">
+                            <div class="card-title pcb-title">8 Push Buttons V1.1 (K1..K8)</div>
+                            <p class="board-note">Кликните по красной кнопке, чтобы зажать (0 на входе).</p>
+                            <div class="btn-matrix-pushed">
+                                <button type="button" class="pcb-btn" id="vbtn_K1" onclick="toggleVButton('K1')"><span class="cap"></span><span class="lbl">K1 (PD2)</span></button>
+                                <button type="button" class="pcb-btn" id="vbtn_K2" onclick="toggleVButton('K2')"><span class="cap"></span><span class="lbl">K2 (PD3)</span></button>
+                                <button type="button" class="pcb-btn" id="vbtn_K3" onclick="toggleVButton('K3')"><span class="cap"></span><span class="lbl">K3 (PD4)</span></button>
+                                <button type="button" class="pcb-btn" id="vbtn_K4" onclick="toggleVButton('K4')"><span class="cap"></span><span class="lbl">K4 (PB0)</span></button>
+                                <button type="button" class="pcb-btn" id="vbtn_K5" onclick="toggleVButton('K5')"><span class="cap"></span><span class="lbl">K5 (PB1)</span></button>
+                                <button type="button" class="pcb-btn" id="vbtn_K6" onclick="toggleVButton('K6')"><span class="cap"></span><span class="lbl">K6 (PB2)</span></button>
+                                <button type="button" class="pcb-btn" id="vbtn_K7" onclick="toggleVButton('K7')"><span class="cap"></span><span class="lbl">K7 (PB3)</span></button>
+                                <button type="button" class="pcb-btn" id="vbtn_K8" onclick="toggleVButton('K8')"><span class="cap"></span><span class="lbl">K8 (PB4)</span></button>
+                            </div>
+                        </div>
+
+                        <!-- СУПЕР-ЯРКИЙ СВЕТОДИОД L (PB5) -->
+                        <div class="board-card uno-led-card">
+                            <div class="card-title">Светодиод платы [L] (Вывод PB5 / Pin 13)</div>
+                            <div class="single-led">
+                                <div class="led-light" id="ledPB5"></div>
+                                <span class="led-label">PB5 (Яркий LED)</span>
+                            </div>
+                        </div>
+
+                        <!-- ЛИНЕЙКА ПОРТОВ -->
+                        <div class="board-card">
+                            <div class="port-header-row">
+                                <div class="card-title" id="ledPortTitle">Линейка светодиодов (Порт D)</div>
+                                <div class="port-selector-btns">
+                                    <button type="button" class="port-btn active" id="btnPortD" onclick="selectLedPort('D')">Порт D</button>
+                                    <button type="button" class="port-btn" id="btnPortB" onclick="selectLedPort('B')">Порт B</button>
+                                    <button type="button" class="port-btn" id="btnPortC" onclick="selectLedPort('C')">Порт C</button>
+                                </div>
+                            </div>
+                            <div class="led-bar" id="portLedsBar">
+                                <div class="led-col"><div class="led-light" id="ledPin7"></div><span class="led-bit-name" id="lblPin7">D7</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin6"></div><span class="led-bit-name" id="lblPin6">D6</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin5"></div><span class="led-bit-name" id="lblPin5">D5</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin4"></div><span class="led-bit-name" id="lblPin4">D4</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin3"></div><span class="led-bit-name" id="lblPin3">D3</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin2"></div><span class="led-bit-name" id="lblPin2">D2</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin1"></div><span class="led-bit-name" id="lblPin1">D1</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin0"></div><span class="led-bit-name" id="lblPin0">D0</span></div>
+                            </div>
+                        </div>
+
+                        <div class="board-card uart-card">
+                            <div class="uart-header">
+                                <div class="card-title">Терминал UART (UDR0)</div>
+                                <button type="button" class="btn-link" onclick="clearUart()">Очистить</button>
+                            </div>
+                            <pre class="uart-console" id="uartTerminal">UART готов к приёму данных...</pre>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ПАНЕЛЬ 3: КОНСТРУКТОР СХЕМ -->
+                <section class="slide-panel circuit-slide">
+                    <div class="slide-header">
+                        <h2>🛠️ Конструктор цепей</h2>
+                        <button type="button" class="btn-clear-code" onclick="clearCustomCircuit()" title="Очистить схему">🗑️</button>
+                    </div>
+                    <div class="board-scroll-area">
+                        <div class="board-card">
+                            <div class="card-title">Добавить деталь на макет</div>
+                            <div class="circuit-add-bar">
+                                <button type="button" class="btn-add-comp" onclick="addCustomComponent('led', 'red')">🔴 LED</button>
+                                <button type="button" class="btn-add-comp" onclick="addCustomComponent('led', 'green')">🟢 LED</button>
+                                <button type="button" class="btn-add-comp" onclick="addCustomComponent('led', 'yellow')">🟡 LED</button>
+                                <button type="button" class="btn-add-comp" onclick="addCustomComponent('led', 'blue')">🔵 LED</button>
+                                <button type="button" class="btn-add-comp" onclick="addCustomComponent('button')">🔘 Кнопка</button>
+                                <button type="button" class="btn-add-comp" onclick="addCustomComponent('buzzer')">🔊 Зуммер</button>
+                            </div>
+                        </div>
+
+                        <div class="board-card">
+                            <div class="card-title" id="circuitTitle">Подключенные компоненты (0)</div>
+                            <p class="board-note">Выберите пин для каждой детали. Они работают в реальном времени с кодом!</p>
+                            <div class="circuit-bench" id="circuitBench">
+                                <div class="circuit-empty-hint">Нажмите кнопку выше, чтобы добавить деталь (светодиод, кнопку, пищалку)</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ПАНЕЛЬ 4: РЕГИСТРЫ И ДАМПЫ -->
+                <section class="slide-panel cpu-slide">
+                    <div class="slide-header">
+                        <h2>⚙️ Регистры и память</h2>
+                    </div>
+                    <div class="cpu-scroll-area">
+                        <div class="cpu-subcard">
+                            <div class="card-title">Регистр состояния SREG [I T H S V N Z C]</div>
+                            <div class="flags-grid" id="flagsGrid"></div>
+                        </div>
+
+                        <div class="pointers-bar">
+                            <div class="ptr">PC: <b id="valPC">0x0000</b></div>
+                            <div class="ptr">SP: <b id="valSP">0x08FF</b></div>
+                            <div class="ptr">X: <b id="valX">0x0000</b></div>
+                            <div class="ptr">Y: <b id="valY">0x0000</b></div>
+                            <div class="ptr">Z: <b id="valZ">0x0000</b></div>
+                        </div>
+
+                        <div class="cpu-subcard">
+                            <div class="card-title">Регистры общего назначения (R0...R31)</div>
+                            <div class="registers-grid" id="registersGrid"></div>
+                        </div>
+
+                        <div class="cpu-subcard mem-card-expanded">
+                            <div class="mem-toolbar-header">
+                                <div class="port-selector-btns">
+                                    <button type="button" class="port-btn active" id="btnMemRAM" onclick="setMemView('ram')">ОЗУ (0x0100+)</button>
+                                    <button type="button" class="port-btn" id="btnMemStack" onclick="setMemView('stack')">Стек (0x08FF)</button>
+                                </div>
+                                <div class="port-selector-btns">
+                                    <button type="button" class="port-btn active" id="btnFmtHex" onclick="setMemFormat('hex')">HEX</button>
+                                    <button type="button" class="port-btn" id="btnFmtDec" onclick="setMemFormat('dec')">DEC</button>
+                                </div>
+                            </div>
+                            <pre class="dump-view-wide" id="memDumpView"></pre>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
