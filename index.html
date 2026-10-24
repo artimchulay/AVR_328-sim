@@ -45,7 +45,7 @@
                 </div>
             </div>
 
-            <!-- ВКЛАДКИ ПАНЕЛЕЙ (РАСТЯГИВАЮТСЯ НА 100%) -->
+            <!-- ВКЛАДКИ ПАНЕЛЕЙ -->
             <nav class="nav-screens" id="panelNav">
                 <button type="button" class="nav-screen-btn active" id="tabBtn_editor" onclick="togglePanel('editor')">📝 Код</button>
                 <button type="button" class="nav-screen-btn" id="tabBtn_board" onclick="togglePanel('board')">💡 Плата</button>
@@ -199,7 +199,7 @@
                     <div class="slide-header">
                         <div style="display:flex; align-items:center; gap:8px;">
                             <h2>🔌 Программатор & USB-C</h2>
-                            <span class="usb-status-tag" id="usbStatusBadge">🟢 USB-C: Подключено (COM3)</span>
+                            <span class="usb-status-tag" id="usbStatusBadge" style="background:rgba(239,68,68,0.12); color:#ef4444; border-color:rgba(239,68,68,0.3);">🔴 USB-C: Отключено</span>
                         </div>
                         <button type="button" class="btn-mini" onclick="connectRealWebSerial()" title="Реальный USB порт">🌐 Реальный USB</button>
                     </div>
@@ -271,7 +271,7 @@
                                 </div>
                             </div>
                             <div class="serial-terminal-window" id="serialTerminalWindow">
-                                <div class="serial-line system">[Система]: USB-C соединение активно. Контроллер готов к приему команд.</div>
+                                <div class="serial-line system">[Система]: Ожидание подключения по USB-C...</div>
                             </div>
                             <div class="serial-send-row">
                                 <input type="text" id="serialInput" placeholder="Введите команду в МК..." onkeydown="if(event.key==='Enter') sendSerialData()">
