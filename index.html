@@ -17,6 +17,7 @@
                 <div class="select-wrapper">
                     <select id="exampleSelector" onchange="loadSelectedExample()">
                         <option value="test_all" selected>📝 Комплексный тест: команды и флаги SREG</option>
+                        <option value="c_interrupt_int0">⚡ Тема 5: Внешнее прерывание INT0 (Кнопка K1)</option>
                         <option value="c_blink_counter">⚡ Си: Мигающий светодиод L (Счетчик 800 000 if/else)</option>
                         <option value="led_running">📝 Бегущий огонёк (Порт D)</option>
                         <option value="c_zadanie5">⚡ Си: Кнопки-переключатели светодиодов (PD2..PD4)</option>
@@ -44,7 +45,7 @@
                 </div>
             </div>
 
-            <!-- НЕЗАВИСИМЫЕ ВКЛАДКИ -->
+            <!-- ВКЛАДКИ ПАНЕЛЕЙ (РАСТЯГИВАЮТСЯ НА 100%) -->
             <nav class="nav-screens" id="panelNav">
                 <button type="button" class="nav-screen-btn active" id="tabBtn_editor" onclick="togglePanel('editor')">📝 Код</button>
                 <button type="button" class="nav-screen-btn" id="tabBtn_board" onclick="togglePanel('board')">💡 Плата</button>
@@ -117,10 +118,20 @@
                         </div>
 
                         <div class="board-card uno-led-card">
-                            <div class="card-title">Светодиод платы [L] (Вывод PB5 / Pin 13)</div>
-                            <div class="single-led">
-                                <div class="led-light" id="ledPB5"></div>
-                                <span class="led-label">PB5 (Arduino LED)</span>
+                            <div class="card-title">Светодиоды платы [L, TX, RX]</div>
+                            <div class="board-leds-row">
+                                <div class="single-led">
+                                    <div class="led-light" id="ledPB5"></div>
+                                    <span class="led-label">L (PB5)</span>
+                                </div>
+                                <div class="single-led">
+                                    <div class="led-light" id="ledTX"></div>
+                                    <span class="led-label">TX (PD1)</span>
+                                </div>
+                                <div class="single-led">
+                                    <div class="led-light" id="ledRX"></div>
+                                    <span class="led-label">RX (PD0)</span>
+                                </div>
                             </div>
                         </div>
 
@@ -183,17 +194,16 @@
                     </div>
                 </section>
 
-                <!-- ПАНЕЛЬ 4: ПРОГРАММАТОР И ТЕЛЕМЕТРИЯ USB-C (НОВАЯ) -->
+                <!-- ПАНЕЛЬ 4: ПРОГРАММАТОР И USB-C -->
                 <section class="slide-panel prog-slide" id="panel_prog">
                     <div class="slide-header">
                         <div style="display:flex; align-items:center; gap:8px;">
                             <h2>🔌 Программатор & USB-C</h2>
                             <span class="usb-status-tag" id="usbStatusBadge">🟢 USB-C: Подключено (COM3)</span>
                         </div>
-                        <button type="button" class="btn-mini" onclick="connectRealWebSerial()" title="Подключить реальную плату через порт браузера">🌐 Реальный USB</button>
+                        <button type="button" class="btn-mini" onclick="connectRealWebSerial()" title="Реальный USB порт">🌐 Реальный USB</button>
                     </div>
                     <div class="prog-scroll-area">
-                        <!-- ПЛАШКА ТЕЛЕМЕТРИИ ЧИПА -->
                         <div class="telemetry-grid">
                             <div class="telem-card">
                                 <span class="telem-label">Питание VCC</span>
@@ -221,7 +231,6 @@
                             </div>
                         </div>
 
-                        <!-- ВИЗУАЛЬНЫЙ USB-C КАБЕЛЬ С ИНДИКАТОРАМИ -->
                         <div class="usb-hub-card">
                             <div class="usb-cable-visual">
                                 <div class="usb-plug-box">💻 ПК / Браузер</div>
@@ -239,7 +248,6 @@
                                 </div>
                             </div>
 
-                            <!-- КНОПКА ЗАГРУЗКИ ПРОШИВКИ -->
                             <div class="flasher-bar">
                                 <button type="button" class="btn btn-flash" id="btnFlashMcu" onclick="flashFirmware()">
                                     <span>⚡</span> Загрузить прошивку в МК (AVRDUDE)
@@ -250,10 +258,9 @@
                             </div>
                         </div>
 
-                        <!-- ДВУСТОРОННИЙ SERIAL MONITOR (ОБМЕН ПО ПРОВОДУ) -->
                         <div class="serial-monitor-card">
                             <div class="serial-monitor-header">
-                                <span>Монитор порта (Двусторонняя связь по проводу)</span>
+                                <span>Монитор порта (Двусторонняя связь)</span>
                                 <div class="serial-baud-select">
                                     <label>Бод:</label>
                                     <select id="serialBaud">
@@ -267,7 +274,7 @@
                                 <div class="serial-line system">[Система]: USB-C соединение активно. Контроллер готов к приему команд.</div>
                             </div>
                             <div class="serial-send-row">
-                                <input type="text" id="serialInput" placeholder="Введите команду в МК (напр. 1 или 'TEST')..." onkeydown="if(event.key==='Enter') sendSerialData()">
+                                <input type="text" id="serialInput" placeholder="Введите команду в МК..." onkeydown="if(event.key==='Enter') sendSerialData()">
                                 <button type="button" class="btn btn-step" onclick="sendSerialData()">Отправить ➔</button>
                             </div>
                         </div>
