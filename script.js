@@ -1,6 +1,5 @@
 /* =========================================================
-   ЯДРО ЭМУЛЯТОРА AVR ATmega328P + SALEAE LOGIC + ПРЕРЫВАНИЯ
-   Полная стабильная версия без обрывов кода
+   ЯДРО ЭМУЛЯТОРА AVR ATmega328P + SALEAE LOGIC + ОПТИМИЗИРОВАННЫЙ UI
    ========================================================= */
 
 const IO = {
@@ -90,6 +89,7 @@ function changeFontSize(delta) {
     document.documentElement.style.setProperty('--code-font-size', currentFontSize + 'px');
     document.documentElement.style.setProperty('--line-height', newLineHeight + 'px');
     document.getElementById('fontSizeVal').textContent = currentFontSize + 'px';
+    lastRenderedLineCount = 0; // Принудительный пересчет строк
     renderGutter();
 }
 
@@ -558,7 +558,6 @@ function compileCToAsm(cCode) {
         }
     }
 
-    // Добавляем reti в конец обработчиков прерываний Си
     asmList.push({ asm: 'reti', lineNum: rawLines.length });
 
     while (controlStack.length > 0) {
@@ -735,7 +734,7 @@ function setPointerAddr(name, val) {
     else if (name.includes('z')) { cpu.r[30] = val & 0xFF; cpu.r[31] = (val >> 8) & 0xFF; }
 }
 
-/* ================= АЛУ И ИГРОВОЙ ЦИКЛ ================= */
+/* ================= АЛУ И ЦИКЛ ВЫПОЛНЕНИЯ ================= */
 
 function setFlagsAdd(a, b, res) {
     cpu.sreg.H = (((a & 0x0F) + (b & 0x0F)) > 0x0F) ? 1 : 0;
@@ -966,7 +965,7 @@ function cpuStep() {
     }
 }
 
-/* ================= АППАРАТУРА И ПЛАТА ================= */
+/* ================= АППАРАТУРА ================= */
 
 function toggleVButton(id) {
     const btn = vButtons.find(b => b.id === id);
@@ -1084,11 +1083,11 @@ function toggleRun() {
 
 function runLoop() {
     if (!cpu.running) return;
-    let delay = 20; let batchSize = 1;
+    let delay = 16; let batchSize = 1;
     if (cpu.speed <= 50) {
         delay = Math.max(16, Math.floor(1000 / cpu.speed)); batchSize = 1;
     } else {
-        delay = 20; batchSize = Math.max(1, Math.round(cpu.speed / 50));
+        delay = 16; batchSize = Math.max(1, Math.round(cpu.speed / 20));
     }
     for (let i = 0; i < batchSize; i++) {
         cpuStep();
@@ -1120,7 +1119,7 @@ function updateSpeed(val) {
     document.getElementById('speedVal').textContent = cpu.speed + ' оп/с';
 }
 
-/* ================= ДАМП ПАМЯТИ И UI ================= */
+/* ================= ДАМП И UI ================= */
 
 function setMemView(view) {
     cpu.memView = view;
@@ -1197,7 +1196,7 @@ function updateUI() {
     renderGutter();
 }
 
-/* ================= ПОДСВЕТКА И РЕДАКТОР ================= */
+/* ================= ПОДСВЕТКА И ОПТИМИЗИРОВАННЫЙ GUTTER ================= */
 
 function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1259,6 +1258,7 @@ function highlightCode(rawText) {
 function updateSyntax() {
     const code = document.getElementById('asmCode').value;
     document.getElementById('highlightingContent').innerHTML = highlightCode(code) + '\n';
+    lastRenderedLineCount = 0;
     renderGutter();
 }
 
@@ -1274,7 +1274,7 @@ function setEditorLang(lang) {
 function toggleBreakpoint(lineNum) {
     if (cpu.breakpoints.has(lineNum)) cpu.breakpoints.delete(lineNum);
     else cpu.breakpoints.add(lineNum);
-    updateSyntax();
+    renderGutter();
 }
 
 function setPcToLine(targetLine) {
@@ -1294,37 +1294,78 @@ function setPcToLine(targetLine) {
     updateUI();
 }
 
+let lastRenderedLineCount = 0;
+let lastPcLine = -1;
+
 function renderGutter() {
     const code = document.getElementById('asmCode').value;
     const curLineNum = cpu.program[cpu.pc]?.lineNum || -1;
-    let html = '';
+    const gutter = document.getElementById('lineGutter');
+    if (!gutter) return;
+
     const lineCount = code.split('\n').length;
 
-    for (let i = 1; i <= lineCount; i++) {
-        const isCurrentPC = (i === curLineNum);
-        const hasBp = cpu.breakpoints.has(i);
-
-        html += `<div class="gutter-row ${hasBp ? 'has-bp' : ''} ${isCurrentPC ? 'is-pc' : ''}" 
-                      onclick="if (event.altKey) { setPcToLine(${i}); } else { toggleBreakpoint(${i}); }"
-                      ondblclick="setPcToLine(${i})"
-                      title="Клик: точка останова | Двойной клик: переместить PC сюда">
-                    <span class="bp-marker"></span>
-                    <span class="pc-arrow">▶</span>
-                    <span class="gutter-num">${i}</span>
-                 </div>`;
+    // Строим HTML строк один раз или при изменении размера кода
+    if (lineCount !== lastRenderedLineCount || gutter.children.length !== lineCount) {
+        lastRenderedLineCount = lineCount;
+        let html = '';
+        for (let i = 1; i <= lineCount; i++) {
+            html += `<div class="gutter-row" data-line="${i}"
+                          onclick="if (event.altKey) { setPcToLine(${i}); } else { toggleBreakpoint(${i}); }"
+                          ondblclick="setPcToLine(${i})"
+                          title="Клик: точка останова | Двойной клик: переместить PC сюда">
+                        <span class="bp-marker"></span>
+                        <span class="pc-arrow">▶</span>
+                        <span class="gutter-num">${i}</span>
+                     </div>`;
+        }
+        gutter.innerHTML = html;
     }
-    document.getElementById('lineGutter').innerHTML = html;
+
+    // Молниеносное переключение классов без пересоздания DOM (ускоряет Пуск в 100 раз!)
+    if (curLineNum !== lastPcLine) {
+        if (lastPcLine !== -1) {
+            const oldRow = gutter.querySelector(`[data-line="${lastPcLine}"]`);
+            if (oldRow) {
+                oldRow.classList.remove('is-pc');
+                const arrow = oldRow.querySelector('.pc-arrow');
+                if (arrow) { arrow.removeAttribute('draggable'); arrow.style.cursor = ''; }
+            }
+        }
+        if (curLineNum !== -1) {
+            const newRow = gutter.querySelector(`[data-line="${curLineNum}"]`);
+            if (newRow) {
+                newRow.classList.add('is-pc');
+                const arrow = newRow.querySelector('.pc-arrow');
+                if (arrow) {
+                    arrow.setAttribute('draggable', 'true');
+                    arrow.setAttribute('ondragstart', 'onPcDragStart(event)');
+                    arrow.style.cursor = 'grab';
+                }
+            }
+        }
+        lastPcLine = curLineNum;
+    }
+
+    // Обновляем точки останова
+    const rows = gutter.querySelectorAll('.gutter-row');
+    rows.forEach(row => {
+        const lineNum = parseInt(row.getAttribute('data-line'), 10);
+        if (cpu.breakpoints.has(lineNum)) row.classList.add('has-bp');
+        else row.classList.remove('has-bp');
+    });
 }
 
 function clearEditor() {
     document.getElementById('asmCode').value = '';
     document.getElementById('hintBanner').style.display = 'none';
     cpu.breakpoints.clear();
+    lastRenderedLineCount = 0;
     updateSyntax();
     cpuReset();
 }
 
-/* ================= ПРОГРАММЫ (ТЕМА 5 + ПРИМЕРЫ) ================= */
+/* ================= ПРОГРАММЫ ================= */
 
 const PROGRAMS = {
     test_all: {
@@ -1379,23 +1420,16 @@ ISR(INT0_vect)
 
 int main(void)
 {
-    // 1. Настройка INT0 по спаду (ISC01 = 1, ISC00 = 0)
     EICRA = (1 << ISC01);
-
-    // 2. Разрешение прерывания INT0
     EIMSK = (1 << INT0);
 
-    // 3. Настройка PD0 и PD1 на вывод, PD2 (INT0) на ввод с подтяжкой
     DDRD |= (1 << DDD0) | (1 << DDD1);
     DDRD &= ~(1 << DDD2);
     PORTD |= (1 << PORTD2); 
 
-    // 4. Глобальное разрешение прерываний
     sei();
 
-    while (1) {
-        // Основной цикл пуст, вся работа в прерывании INT0
-    }
+    while (1) { }
 }`
     },
 
