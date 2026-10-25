@@ -1,5 +1,5 @@
 /* =========================================================
-   ЯДРО ЭМУЛЯТОРА AVR ATmega328P + SALEAE LOGIC + ИСПРАВЛЕННЫЕ ПРЕРЫВАНИЯ
+   ЯДРО ЭМУЛЯТОРА AVR ATmega328P + SALEAE LOGIC + ИСПРАВЛЕННЫЙ ВЛОЖЕННЫЙ C
    ========================================================= */
 
 const IO = {
@@ -285,7 +285,7 @@ function drawLogicAnalyzer() {
     });
 }
 
-/* ================= ПОЛНАЯ ТАБЛИЦА КОНСТАНТ AVR ================= */
+/* ================= КОНСТАНТЫ AVR ================= */
 
 const AVR_CONSTS = {
     ISC00: 0, ISC01: 1, ISC10: 2, ISC11: 3,
@@ -324,7 +324,7 @@ function scaleThreshold(val) {
     return Math.min(255, Math.max(0, val));
 }
 
-/* ================= СИ-ТРАНСЛЯТОР ================= */
+/* ================= СИ-ТРАНСЛЯТОР (С НАДЕЖНЫМ ВЛОЖЕНИЕМ IF-ELSE) ================= */
 
 function compileCToAsm(cCode) {
     const rawLines = cCode.split('\n');
@@ -346,8 +346,20 @@ function compileCToAsm(cCode) {
         return str;
     }
 
+    // Проверка: идет ли дальше по тексту ветка else
+    function checkNextLineIsElse(startIdx) {
+        for (let j = startIdx + 1; j < rawLines.length; j++) {
+            let l = rawLines[j];
+            const sIdx = l.indexOf('//');
+            if (sIdx !== -1) l = l.substring(0, sIdx);
+            l = l.trim();
+            if (!l) continue;
+            return l.startsWith('else');
+        }
+        return false;
+    }
+
     asmList.push({ asm: '.include "m328pdef.inc"', lineNum: 1 });
-    // Автоматический переход в main на старте
     asmList.push({ asm: 'rjmp __main', lineNum: 1 });
 
     for (let i = 0; i < rawLines.length; i++) {
@@ -359,7 +371,6 @@ function compileCToAsm(cCode) {
 
         if (!line || line.startsWith('#') || line.startsWith('/*')) continue;
 
-        // Обработка прерываний ISR
         const isrMatch = line.match(/ISR\s*\(\s*([a-zA-Z0-9_]+)\s*\)/);
         if (isrMatch) {
             const vName = isrMatch[1];
@@ -382,7 +393,6 @@ function compileCToAsm(cCode) {
         if (line.includes('sei()')) { asmList.push({ asm: 'sei', lineNum }); continue; }
         if (line.includes('cli()')) { asmList.push({ asm: 'cli', lineNum }); continue; }
 
-        // Однострочный while (1) { }
         if (line.match(/while\s*\(\s*1\s*\)\s*\{\s*\}/)) {
             const startLbl = `while_start_${labelCounter++}`;
             asmList.push({ asm: `${startLbl}:`, lineNum });
@@ -390,19 +400,31 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Закрывающие скобки
+        // Закрывающие фигурные скобки }
         if (line === '}' || line.startsWith('}')) {
             if (controlStack.length > 0) {
-                const top = controlStack.pop();
-                if (top.type === 'isr') {
-                    asmList.push({ asm: 'reti', lineNum });
-                } else if (top.type === 'while') {
-                    asmList.push({ asm: `rjmp ${top.startLbl}`, lineNum });
-                } else if (top.type === 'if') {
-                    asmList.push({ asm: `${top.lblFalse}:`, lineNum });
-                    if (top.lblEnd) asmList.push({ asm: `${top.lblEnd}:`, lineNum });
+                const top = controlStack[controlStack.length - 1];
+
+                if (top.type === 'if') {
+                    if (checkNextLineIsElse(i) || line.includes('else')) {
+                        // Если дальше идет else: прыгаем через него, выставляем метку false
+                        asmList.push({ asm: `rjmp ${top.lblEnd}`, lineNum });
+                        asmList.push({ asm: `${top.lblFalse}:`, lineNum });
+                        top.type = 'else'; // Превращаем текущий if в else
+                    } else {
+                        controlStack.pop();
+                        asmList.push({ asm: `${top.lblFalse}:`, lineNum });
+                        asmList.push({ asm: `${top.lblEnd}:`, lineNum });
+                    }
                 } else if (top.type === 'else') {
+                    controlStack.pop();
                     asmList.push({ asm: `${top.lblEnd}:`, lineNum });
+                } else if (top.type === 'while') {
+                    controlStack.pop();
+                    asmList.push({ asm: `rjmp ${top.startLbl}`, lineNum });
+                } else if (top.type === 'isr') {
+                    controlStack.pop();
+                    asmList.push({ asm: 'reti', lineNum });
                 }
             }
             if (line === '}') continue;
@@ -411,13 +433,6 @@ function compileCToAsm(cCode) {
         }
 
         if (line.startsWith('else')) {
-            if (controlStack.length > 0 && controlStack[controlStack.length - 1].type === 'if') {
-                const prevIf = controlStack.pop();
-                const lblEnd = `lbl_end_${labelCounter++}`;
-                asmList.push({ asm: `rjmp ${lblEnd}`, lineNum });
-                asmList.push({ asm: `${prevIf.lblFalse}:`, lineNum });
-                controlStack.push({ type: 'else', lblEnd });
-            }
             line = line.substring(4).trim();
             if (!line || line === '{') continue;
         }
@@ -439,7 +454,7 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Битовые операции с регистрами: |=
+        // Регистры: |=
         const portOrMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC|PCICR|EICRA|EIMSK)\s*\|\=\s*([^;]+);/);
         if (portOrMatch) {
             const portName = portOrMatch[1];
@@ -450,7 +465,7 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Битовые операции: &= ~
+        // Регистры: &= ~
         const portAndNotMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC)\s*&\=\s*~\s*\(?\s*([^;]+)\)?;/);
         if (portAndNotMatch) {
             const portName = portAndNotMatch[1];
@@ -462,7 +477,7 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Инверсия ^=
+        // Регистры: ^=
         const portXorMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD)\s*\^\=\s*([^;]+);/);
         if (portXorMatch) {
             const portName = portXorMatch[1];
@@ -474,7 +489,7 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Присваивание регистрам =
+        // Регистры: =
         const portAssignMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC|EICRA|EIMSK|PCICR|PCMSK0|PCMSK2)\s*=\s*([^;]+);/);
         if (portAssignMatch) {
             const portName = portAssignMatch[1];
@@ -486,7 +501,7 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Присваивание переменной
+        // Присваивание переменной (flag = 1; x = 0;)
         const varAssignMatch = line.match(/\b([a-zA-Z0-9_]+)\s*=\s*([^;]+);/);
         if (varAssignMatch) {
             const vName = varAssignMatch[1];
@@ -502,7 +517,7 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Инкремент / декремент
+        // Инкремент / декремент (x++;)
         const incMatch = line.match(/\b([a-zA-Z0-9_]+)\+\+;/);
         if (incMatch && varMap[incMatch[1]]) {
             asmList.push({ asm: `inc ${varMap[incMatch[1]].reg}`, lineNum });
@@ -517,20 +532,21 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // if с проверкой кнопки
+        // if с кнопкой
         let ifBtnMatch = line.match(/if\s*\(\s*!\s*\(\s*(PINB|PIND)\s*&\s*\(\s*1\s*<<\s*([^)]+)\)\s*\)\s*\)/);
         if (ifBtnMatch) {
             const pinPort = ifBtnMatch[1];
             const bit = evalSafe(applyDefines(ifBtnMatch[2]));
             const lblFalse = `lbl_false_${labelCounter++}`;
+            const lblEnd = `lbl_end_${labelCounter++}`;
             asmList.push({ asm: `in r16, ${pinPort}`, lineNum });
             asmList.push({ asm: `sbrc r16, ${bit}`, lineNum });
             asmList.push({ asm: `rjmp ${lblFalse}`, lineNum });
-            controlStack.push({ type: 'if', lblFalse });
+            controlStack.push({ type: 'if', lblFalse, lblEnd });
             continue;
         }
 
-        // if со сравнением
+        // if с числовым сравнением (if (x >= 800000) или if (flag == 0))
         const ifCmpMatch = line.match(/if\s*\(\s*([a-zA-Z0-9_]+)\s*(==|!=|>=|>|<=|<)\s*([^)]+)\)/);
         if (ifCmpMatch) {
             const vName = ifCmpMatch[1];
@@ -540,6 +556,8 @@ function compileCToAsm(cCode) {
             if (cmpVal !== null && varMap[vName]) {
                 cmpVal = scaleThreshold(cmpVal);
                 const lblFalse = `lbl_false_${labelCounter++}`;
+                const lblEnd = `lbl_end_${labelCounter++}`;
+
                 asmList.push({ asm: `cpi ${varMap[vName].reg}, ${cmpVal & 0xFF}`, lineNum });
                 if (op === '==')      asmList.push({ asm: `brne ${lblFalse}`, lineNum });
                 else if (op === '!=') asmList.push({ asm: `breq ${lblFalse}`, lineNum });
@@ -548,7 +566,7 @@ function compileCToAsm(cCode) {
                 else if (op === '>')  asmList.push({ asm: `brls ${lblFalse}`, lineNum });
                 else if (op === '<=') asmList.push({ asm: `brhi ${lblFalse}`, lineNum });
 
-                controlStack.push({ type: 'if', lblFalse });
+                controlStack.push({ type: 'if', lblFalse, lblEnd });
                 continue;
             }
         }
@@ -557,8 +575,14 @@ function compileCToAsm(cCode) {
     while (controlStack.length > 0) {
         const top = controlStack.pop();
         if (top.type === 'while') asmList.push({ asm: `rjmp ${top.startLbl}`, lineNum: rawLines.length });
-        else if (top.type === 'if') asmList.push({ asm: `${top.lblFalse}:`, lineNum: rawLines.length });
-        else if (top.type === 'isr') asmList.push({ asm: 'reti', lineNum: rawLines.length });
+        else if (top.type === 'if') {
+            asmList.push({ asm: `${top.lblFalse}:`, lineNum: rawLines.length });
+            asmList.push({ asm: `${top.lblEnd}:`, lineNum: rawLines.length });
+        } else if (top.type === 'else') {
+            asmList.push({ asm: `${top.lblEnd}:`, lineNum: rawLines.length });
+        } else if (top.type === 'isr') {
+            asmList.push({ asm: 'reti', lineNum: rawLines.length });
+        }
     }
 
     return asmList;
@@ -745,8 +769,8 @@ function checkInterrupts() {
 
     if (isc0 === 0 && pd2Now === 0) eifr |= (1 << 0);
     else if (isc0 === 1 && pd2Now !== pd2Prev) eifr |= (1 << 0);
-    else if (isc0 === 2 && pd2Prev === 1 && pd2Now === 0) eifr |= (1 << 0); // Falling
-    else if (isc0 === 3 && pd2Prev === 0 && pd2Now === 1) eifr |= (1 << 0); // Rising
+    else if (isc0 === 2 && pd2Prev === 1 && pd2Now === 0) eifr |= (1 << 0);
+    else if (isc0 === 3 && pd2Prev === 0 && pd2Now === 1) eifr |= (1 << 0);
 
     // INT1 (PD3)
     const isc1 = (eicra >> 2) & 0x03;
@@ -766,7 +790,6 @@ function checkInterrupts() {
     if ((curPind ^ cpu.prevPinD) & pcmsk2) pcifr |= (1 << 2);
     writeRAM(IO.PCIFR, pcifr);
 
-    // Если прерывания разрешены глобально (флаг I в SREG)
     if (cpu.sreg.I === 1) {
         const eimsk = readRAM(IO.EIMSK);
         const pcicr = readRAM(IO.PCICR);
@@ -797,7 +820,7 @@ function checkInterrupts() {
 function dispatchInterrupt(vectorLabel, vectorAddr) {
     pushStack(cpu.pc & 0xFF);
     pushStack((cpu.pc >> 8) & 0xFF);
-    cpu.sreg.I = 0; // Аппаратный сброс I
+    cpu.sreg.I = 0;
 
     if (cpu.labels[vectorLabel] !== undefined) {
         cpu.pc = cpu.labels[vectorLabel];
@@ -899,7 +922,7 @@ function cpuStep() {
             const high = popStack();
             const low = popStack();
             nextPC = (high << 8) | low;
-            cpu.sreg.I = 1; // Восстанавливаем прерывания
+            cpu.sreg.I = 1;
             break;
         }
         case 'sei': { cpu.sreg.I = 1; break; }
