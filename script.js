@@ -1,5 +1,6 @@
 /* =========================================================
-   ЯДРО ЭМУЛЯТОРА AVR ATmega328P + SALEAE LOGIC + ОПТИМИЗИРОВАННЫЙ UI
+   ЯДРО ЭМУЛЯТОРА AVR ATmega328P + SALEAE LOGIC ANALYZER
+   Полная стабильная версия с работающим пуском и четким текстом
    ========================================================= */
 
 const IO = {
@@ -89,7 +90,6 @@ function changeFontSize(delta) {
     document.documentElement.style.setProperty('--code-font-size', currentFontSize + 'px');
     document.documentElement.style.setProperty('--line-height', newLineHeight + 'px');
     document.getElementById('fontSizeVal').textContent = currentFontSize + 'px';
-    lastRenderedLineCount = 0; // Принудительный пересчет строк
     renderGutter();
 }
 
@@ -247,9 +247,10 @@ function drawLogicAnalyzer() {
         ctx.lineTo(w, lowY);
         ctx.stroke();
 
+        // Жирные, четкие подписи каналов
         ctx.fillStyle = ch.color;
-        ctx.font = 'bold 11px monospace';
-        ctx.fillText(ch.label, 8, lowY - 3);
+        ctx.font = 'bold 12px "Consolas", "Courier New", monospace';
+        ctx.fillText(ch.label, 8, lowY - 4);
 
         ctx.strokeStyle = ch.color;
         ctx.lineWidth = 2;
@@ -1071,6 +1072,12 @@ function haltExecution() {
 
 function toggleRun() {
     if (cpu.error) return;
+    
+    // Если программа уже дошла до конца, перезапускаем с начала
+    if (cpu.pc >= cpu.program.length) {
+        cpu.pc = 0;
+    }
+
     cpu.running = !cpu.running;
     const btn = document.getElementById('btnRun');
     if (cpu.running) {
@@ -1083,12 +1090,16 @@ function toggleRun() {
 
 function runLoop() {
     if (!cpu.running) return;
-    let delay = 16; let batchSize = 1;
+    let delay = 16;
+    let batchSize = 1;
     if (cpu.speed <= 50) {
-        delay = Math.max(16, Math.floor(1000 / cpu.speed)); batchSize = 1;
+        delay = Math.max(16, Math.floor(1000 / cpu.speed));
+        batchSize = 1;
     } else {
-        delay = 16; batchSize = Math.max(1, Math.round(cpu.speed / 20));
+        delay = 16;
+        batchSize = Math.max(1, Math.round(cpu.speed / 25));
     }
+
     for (let i = 0; i < batchSize; i++) {
         cpuStep();
         if (!cpu.running || cpu.error) { haltExecution(); break; }
@@ -1164,6 +1175,16 @@ function renderMemoryDumps() {
     memBox.textContent = output;
 }
 
+function updateTelemetry() {
+    let usedFlash = cpu.program.length * 2;
+    const flashElem = document.getElementById('telemFlash');
+    if (flashElem) flashElem.textContent = `${usedFlash} / 32256 B`;
+
+    let freeSram = 0x08FF - cpu.sp;
+    const sramElem = document.getElementById('telemSram');
+    if (sramElem) sramElem.textContent = `${2048 - freeSram} B`;
+}
+
 function updateUI() {
     document.getElementById('cycleCounter').textContent = `Такты: ${cpu.cycles}`;
     const statusElem = document.getElementById('compilerStatus');
@@ -1196,7 +1217,7 @@ function updateUI() {
     renderGutter();
 }
 
-/* ================= ПОДСВЕТКА И ОПТИМИЗИРОВАННЫЙ GUTTER ================= */
+/* ================= ПОДСВЕТКА И НАДЁЖНЫЙ GUTTER ================= */
 
 function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1258,7 +1279,6 @@ function highlightCode(rawText) {
 function updateSyntax() {
     const code = document.getElementById('asmCode').value;
     document.getElementById('highlightingContent').innerHTML = highlightCode(code) + '\n';
-    lastRenderedLineCount = 0;
     renderGutter();
 }
 
@@ -1266,7 +1286,7 @@ function setEditorLang(lang) {
     currentLang = lang;
     document.getElementById('btnLangAsm').classList.toggle('active', lang === 'asm');
     document.getElementById('btnLangC').classList.toggle('active', lang === 'c');
-    document.getElementById('editorTitle').textContent = lang === 'c' ? '⚡ Редактор (C / Си)' : '📝 Редактор (.asm)';
+    document.getElementById('editorTitle').textContent = lang === 'c' ? '⚡ Редактор (C)' : '📝 Редактор (.asm)';
     updateSyntax();
     cpuReset();
 }
@@ -1294,119 +1314,107 @@ function setPcToLine(targetLine) {
     updateUI();
 }
 
-let lastRenderedLineCount = 0;
-let lastPcLine = -1;
-
+// 100% надёжная отрисовка стрелки PC
 function renderGutter() {
     const code = document.getElementById('asmCode').value;
     const curLineNum = cpu.program[cpu.pc]?.lineNum || -1;
     const gutter = document.getElementById('lineGutter');
     if (!gutter) return;
 
-    const lineCount = code.split('\n').length;
-
-    // Строим HTML строк один раз или при изменении размера кода
-    if (lineCount !== lastRenderedLineCount || gutter.children.length !== lineCount) {
-        lastRenderedLineCount = lineCount;
-        let html = '';
-        for (let i = 1; i <= lineCount; i++) {
-            html += `<div class="gutter-row" data-line="${i}"
-                          onclick="if (event.altKey) { setPcToLine(${i}); } else { toggleBreakpoint(${i}); }"
-                          ondblclick="setPcToLine(${i})"
-                          title="Клик: точка останова | Двойной клик: переместить PC сюда">
-                        <span class="bp-marker"></span>
-                        <span class="pc-arrow">▶</span>
-                        <span class="gutter-num">${i}</span>
-                     </div>`;
-        }
-        gutter.innerHTML = html;
+    const lines = code.split('\n');
+    let html = '';
+    for (let i = 1; i <= lines.length; i++) {
+        const isCurrentPC = (i === curLineNum);
+        const hasBp = cpu.breakpoints.has(i);
+        html += `<div class="gutter-row ${hasBp ? 'has-bp' : ''} ${isCurrentPC ? 'is-pc' : ''}"
+                      onclick="toggleBreakpoint(${i})"
+                      ondblclick="setPcToLine(${i})"
+                      title="Клик: точка останова | Двойной клик: переместить PC сюда">
+                    <span class="bp-marker"></span>
+                    <span class="pc-arrow">▶</span>
+                    <span class="gutter-num">${i}</span>
+                 </div>`;
     }
-
-    // Молниеносное переключение классов без пересоздания DOM (ускоряет Пуск в 100 раз!)
-    if (curLineNum !== lastPcLine) {
-        if (lastPcLine !== -1) {
-            const oldRow = gutter.querySelector(`[data-line="${lastPcLine}"]`);
-            if (oldRow) {
-                oldRow.classList.remove('is-pc');
-                const arrow = oldRow.querySelector('.pc-arrow');
-                if (arrow) { arrow.removeAttribute('draggable'); arrow.style.cursor = ''; }
-            }
-        }
-        if (curLineNum !== -1) {
-            const newRow = gutter.querySelector(`[data-line="${curLineNum}"]`);
-            if (newRow) {
-                newRow.classList.add('is-pc');
-                const arrow = newRow.querySelector('.pc-arrow');
-                if (arrow) {
-                    arrow.setAttribute('draggable', 'true');
-                    arrow.setAttribute('ondragstart', 'onPcDragStart(event)');
-                    arrow.style.cursor = 'grab';
-                }
-            }
-        }
-        lastPcLine = curLineNum;
-    }
-
-    // Обновляем точки останова
-    const rows = gutter.querySelectorAll('.gutter-row');
-    rows.forEach(row => {
-        const lineNum = parseInt(row.getAttribute('data-line'), 10);
-        if (cpu.breakpoints.has(lineNum)) row.classList.add('has-bp');
-        else row.classList.remove('has-bp');
-    });
+    gutter.innerHTML = html;
 }
 
 function clearEditor() {
     document.getElementById('asmCode').value = '';
     document.getElementById('hintBanner').style.display = 'none';
     cpu.breakpoints.clear();
-    lastRenderedLineCount = 0;
     updateSyntax();
     cpuReset();
 }
 
-/* ================= ПРОГРАММЫ ================= */
+/* ================= ПРОГРАММАТОР ================= */
+
+function flashFirmware() {
+    const btn = document.getElementById('btnFlashMcu');
+    const bar = document.getElementById('flashProgress');
+    btn.disabled = true;
+
+    let progress = 0;
+    bar.style.width = '0%';
+
+    const timer = setInterval(() => {
+        progress += 20;
+        bar.style.width = progress + '%';
+
+        if (progress >= 100) {
+            clearInterval(timer);
+            btn.disabled = false;
+            cpuReset();
+            setTimeout(() => { bar.style.width = '0%'; }, 1500);
+        }
+    }, 150);
+}
+
+function sendSerialData() {
+    const inp = document.getElementById('serialInput');
+    if (!inp || !inp.value) return;
+    const msg = inp.value;
+    inp.value = '';
+
+    const term = document.getElementById('serialTerminalWindow');
+    if (term) {
+        const line = document.createElement('div');
+        line.className = 'serial-line tx';
+        line.textContent = `[${new Date().toLocaleTimeString()}] ПК ➔ МК: "${msg}"`;
+        term.appendChild(line);
+        term.scrollTop = term.scrollHeight;
+    }
+
+    writeRAM(IO.UDR0, msg.charCodeAt(0));
+}
+
+function clearSerialLog() {
+    const term = document.getElementById('serialTerminalWindow');
+    if (term) term.innerHTML = '<div class="serial-line system">[Терминал очищен]</div>';
+}
+
+async function connectRealWebSerial() {
+    if (!('serial' in navigator)) {
+        alert('Web Serial API не поддерживается вашим браузером. Откройте симулятор в Chrome, Edge или Opera.');
+        return;
+    }
+    try {
+        const port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+        const badge = document.getElementById('usbStatusBadge');
+        if (badge) {
+            badge.textContent = '🟢 USB-C: Подключено (COM)';
+            badge.style.background = 'rgba(34, 197, 94, 0.12)';
+            badge.style.color = '#22c55e';
+            badge.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+        }
+    } catch (err) {}
+}
+
+/* ================= БАЗА ПРОГРАММ ================= */
 
 const PROGRAMS = {
-    test_all: {
-        hint: "Проверка команд, флагов SREG (I, T, H, S, V, N, Z, C) и арифметики.",
-        lang: "asm",
-        code: `; Комплексный тест: проверка команд, регистров и всех флагов SREG
-.include "m328pdef.inc"
-start:
-    ldi r16, 0x08
-    out sph, r16
-    ldi r16, 0xff
-    out spl, r16
-    sec
-    clc
-    sez
-    clz
-    sen
-    cln
-    sev
-    clv
-    set
-    clt
-    seh
-    clh
-    sei
-    cli
-    nop
-    ldi r16, 0x0F
-    ldi r17, 0x01
-    add r16, r17
-    ldi r17, 10
-    subi r17, -3
-    ldi r18, 0x80
-    neg r18
-    break
-finish:
-    rjmp finish`
-    },
-
     c_interrupt_int0: {
-        hint: "Тема 5: Нажатие кнопки K1 (PD2, INT0) вызывает прерывание по спаду, инвертируя светодиоды RX и TX.",
+        hint: "Нажатие кнопки K1 (PD2, INT0) вызывает прерывание по спаду, инвертируя светодиоды RX и TX.",
         lang: "c",
         code: `// Внешнее прерывание INT0 по спаду (нажатие K1 на PD2)
 #include <avr/io.h>
@@ -1468,6 +1476,121 @@ int main(void)
 }`
     },
 
+    c_zadanie5: {
+        hint: "Кнопки K1 (PD2), K2 (PD3), K3 (PD4) переключают светодиоды PD0 (RX), PD1 (TX) и PB5 (L).",
+        lang: "c",
+        code: `// Управление светодиодами кнопками-триггерами
+#define F_CPU 16000000UL
+#include <avr/io.h>
+#include <util/delay.h>
+
+int main(void)
+{
+    DDRD |= (1 << DDD0) | (1 << DDD1);
+    DDRB |= (1 << DDB5);
+
+    PORTD &= ~((1 << PORTD0) | (1 << PORTD1));
+    PORTB &= ~(1 << PORTB5);
+
+    DDRD &= ~((1 << DDD2) | (1 << DDD3) | (1 << DDD4));
+    PORTD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4);
+
+    while (1)
+    {
+        if (!(PIND & (1 << PIND2)))
+        {
+            _delay_ms(40);
+            if (!(PIND & (1 << PIND2)))
+            {
+                PORTD ^= (1 << PORTD0);
+                while (!(PIND & (1 << PIND2)));
+                _delay_ms(40);
+            }
+        }
+
+        if (!(PIND & (1 << PIND3)))
+        {
+            _delay_ms(40);
+            if (!(PIND & (1 << PIND3)))
+            {
+                PORTD ^= (1 << PORTD1);
+                while (!(PIND & (1 << PIND3)));
+                _delay_ms(40);
+            }
+        }
+
+        if (!(PIND & (1 << PIND4)))
+        {
+            _delay_ms(40);
+            if (!(PIND & (1 << PIND4)))
+            {
+                PORTB ^= (1 << PORTB5);
+                while (!(PIND & (1 << PIND4)));
+                _delay_ms(40);
+            }
+        }
+    }
+}`
+    },
+
+    c_example3: {
+        hint: "Опрос кнопки K4 (PB0) и включение светодиода L (PB5) при нажатии.",
+        lang: "c",
+        code: `// Опрос кнопки PB0 (с подтяжкой) и включение светодиода L (PB5)
+#include <avr/io.h>
+
+int main(void)
+{
+    DDRB = 0x20;
+    PORTB |= 0x01;
+
+    while (1)
+    {
+        if ((PINB & 0x01) == 0)
+            PORTB |= 0x20;
+        else
+            PORTB &= ~0x20;
+    }
+}`
+    },
+
+    test_all: {
+        hint: "Проверка команд, флагов SREG (I, T, H, S, V, N, Z, C) и арифметики.",
+        lang: "asm",
+        code: `; Комплексный тест: проверка команд, регистров и всех флагов SREG
+.include "m328pdef.inc"
+start:
+    ldi r16, 0x08
+    out sph, r16
+    ldi r16, 0xff
+    out spl, r16
+    sec
+    clc
+    sez
+    clz
+    sen
+    cln
+    sev
+    clv
+    set
+    clt
+    seh
+    clh
+    sei
+    cli
+    nop
+    ldi r16, 0x0F
+    ldi r17, 0x01
+    add r16, r17
+    ldi r17, 10
+    subi r17, -3
+    ldi r18, 0x80
+    neg r18
+    break
+finish:
+    rjmp finish`
+    },
+
     led_running: {
         hint: "Бегущий огонёк по светодиодам Порта D.",
         lang: "asm",
@@ -1503,6 +1626,50 @@ start:
     out UDR0, r16
 stop:
     break`
+    },
+
+    sort_ram: {
+        hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и сортирует их по возрастанию.",
+        lang: "asm",
+        code: `; Сортировка массива из 5 чисел в ОЗУ (0x0100..0x0104) по возрастанию
+.include "m328pdef.inc"
+
+ldi r16, 0x16
+sts 0x0100, r16
+ldi r16, 0x03
+sts 0x0101, r16
+ldi r16, 0x25
+sts 0x0102, r16
+ldi r16, 0x45
+sts 0x0103, r16
+ldi r16, 0x01
+sts 0x0104, r16
+
+ldi r20, 5
+out_1:
+    ldi xh, 0x01
+    ldi xl, 0x00
+    ldi r21, 4
+
+in_1:
+    ld r16, x+
+    ld r17, x
+    cp r16, r17
+    brlo no_s
+
+    st x, r16
+    st -x, r17
+    adiw xl, 1
+
+no_s:
+    dec r21
+    brne in_1
+    dec r20
+    brne out_1
+
+finish:
+    break
+    rjmp finish`
     }
 };
 
