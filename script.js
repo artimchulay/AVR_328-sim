@@ -325,19 +325,75 @@ function scaleThreshold(val) {
 }
 
 /* ================= СИ-ТРАНСЛЯТОР (С НАДЕЖНЫМ ВЛОЖЕНИЕМ IF-ELSE) ================= */
+/* ================= ГЛАВА 4: ТРАНСЛЯТОР MICRO-C ================= */
+
+const AVR_CONSTS = {
+    ISC00: 0, ISC01: 1, ISC10: 2, ISC11: 3,
+    INT0: 0, INT1: 1, PCIE0: 0, PCIE1: 1, PCIE2: 2,
+    PORTD0: 0, PORTD1: 1, PORTD2: 2, PORTD3: 3, PORTD4: 4, PORTD5: 5, PORTD6: 6, PORTD7: 7,
+    PORTB0: 0, PORTB1: 1, PORTB2: 2, PORTB3: 3, PORTB4: 4, PORTB5: 5, PORTB6: 6, PORTB7: 7,
+    PORTC0: 0, PORTC1: 1, PORTC2: 2, PORTC3: 3, PORTC4: 4, PORTC5: 5, PORTC6: 6, PORTC7: 7,
+    PIND0: 0, PIND1: 1, PIND2: 2, PIND3: 3, PIND4: 4, PIND5: 5, PIND6: 6, PIND7: 7,
+    PINB0: 0, PINB1: 1, PINB2: 2, PINB3: 3, PINB4: 4, PINB5: 5, PINB6: 6, PINB7: 7,
+    PINC0: 0, PINC1: 1, PINC2: 2, PINC3: 3, PINC4: 4, PINC5: 5, PINC6: 6, PINC7: 7,
+    DDD0: 0, DDD1: 1, DDD2: 2, DDD3: 3, DDD4: 4, DDD5: 5, DDD6: 6, DDD7: 7,
+    DDB0: 0, DDB1: 1, DDB2: 2, DDB3: 3, DDB4: 4, DDB5: 5, DDB6: 6, DDB7: 7,
+    DDC0: 0, DDC1: 1, DDC2: 2, DDC3: 3, DDC4: 4, DDC5: 5, DDC6: 6, DDC7: 7,
+    PD0: 0, PD1: 1, PD2: 2, PD3: 3, PD4: 4, PD5: 5, PD6: 6, PD7: 7,
+    PB0: 0, PB1: 1, PB2: 2, PB3: 3, PB4: 4, PB5: 5, PB6: 6, PB7: 7,
+    PC0: 0, PC1: 1, PC2: 2, PC3: 3, PC4: 4, PC5: 5, PC6: 6, PC7: 7
+};
+
+function evaluateCExpression(expr, defines) {
+    if (!expr) return null;
+    expr = expr.trim();
+    if (defines) {
+        for (const [k, v] of Object.entries(defines)) expr = expr.replace(new RegExp('\\b' + k + '\\b', 'g'), v);
+    }
+    for (const [k, v] of Object.entries(AVR_CONSTS)) {
+        expr = expr.replace(new RegExp('\\b' + k + '\\b', 'g'), v);
+    }
+    expr = expr.replace(/UL|U|L/gi, '');
+    try {
+        return Function(`'use strict'; return (${expr});`)();
+    } catch (e) {
+        return null;
+    }
+}
+
+function scaleThreshold(val) {
+    if (val >= 10000) return Math.max(5, Math.round(val / 20000));
+    return Math.min(255, Math.max(0, val));
+}
 
 function compileCToAsm(cCode) {
-    const rawLines = cCode.split('\n');
+    // 1. Очистка от комментариев
+    let code = cCode.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+    // 2. Препроцессинг: разделение склеенных команд и фигурных скобок
+    code = code.replace(/\{/g, '\n{\n')
+               .replace(/\}/g, '\n}\n')
+               .replace(/;/g, ';\n');
+
+    const rawLines = code.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const asmList = [];
     let regCounter = 17;
     const varMap = {};
     let labelCounter = 1;
     const controlStack = [];
     const defines = {};
+    const globalInits = [];
+    let insideMain = false;
 
+    // Поиск строки с main
+    let mainLineNum = 1;
     for (let i = 0; i < rawLines.length; i++) {
-        const line = rawLines[i].trim();
-        const defMatch = line.match(/^#define\s+([a-zA-Z0-9_]+)\s+(.+)$/);
+        if (rawLines[i].includes('main(')) { mainLineNum = i + 1; break; }
+    }
+
+    // Сбор констант #define
+    for (let i = 0; i < rawLines.length; i++) {
+        const defMatch = rawLines[i].match(/^#define\s+([a-zA-Z0-9_]+)\s+(.+)$/);
         if (defMatch) defines[defMatch[1]] = defMatch[2].replace(/UL|U|L/gi, '').trim();
     }
 
@@ -346,31 +402,25 @@ function compileCToAsm(cCode) {
         return str;
     }
 
-    // Проверка: идет ли дальше по тексту ветка else
     function checkNextLineIsElse(startIdx) {
         for (let j = startIdx + 1; j < rawLines.length; j++) {
             let l = rawLines[j];
-            const sIdx = l.indexOf('//');
-            if (sIdx !== -1) l = l.substring(0, sIdx);
-            l = l.trim();
             if (!l) continue;
             return l.startsWith('else');
         }
         return false;
     }
 
-    asmList.push({ asm: '.include "m328pdef.inc"', lineNum: 1 });
-    asmList.push({ asm: 'rjmp __main', lineNum: 1 });
+    asmList.push({ asm: '.include "m328pdef.inc"', lineNum: mainLineNum });
+    asmList.push({ asm: 'rjmp __main', lineNum: mainLineNum });
 
     for (let i = 0; i < rawLines.length; i++) {
         let line = rawLines[i];
-        const slashIdx = line.indexOf('//');
-        if (slashIdx !== -1) line = line.substring(0, slashIdx);
-        line = line.trim();
         const lineNum = i + 1;
 
-        if (!line || line.startsWith('#') || line.startsWith('/*')) continue;
+        if (!line || line.startsWith('#')) continue;
 
+        // Обработка прерываний ISR
         const isrMatch = line.match(/ISR\s*\(\s*([a-zA-Z0-9_]+)\s*\)/);
         if (isrMatch) {
             const vName = isrMatch[1];
@@ -385,32 +435,27 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        if (line.includes('int main(void)') || line.includes('void main()') || line === 'main()') {
+        // Вход в main
+        if (line.includes('main(')) {
+            insideMain = true;
             asmList.push({ asm: '__main:', lineNum });
+            for (let init of globalInits) asmList.push(init);
             continue;
         }
 
         if (line.includes('sei()')) { asmList.push({ asm: 'sei', lineNum }); continue; }
         if (line.includes('cli()')) { asmList.push({ asm: 'cli', lineNum }); continue; }
 
-        if (line.match(/while\s*\(\s*1\s*\)\s*\{\s*\}/)) {
-            const startLbl = `while_start_${labelCounter++}`;
-            asmList.push({ asm: `${startLbl}:`, lineNum });
-            asmList.push({ asm: `rjmp ${startLbl}`, lineNum });
-            continue;
-        }
-
-        // Закрывающие фигурные скобки }
+        // Закрывающие скобки }
         if (line === '}' || line.startsWith('}')) {
             if (controlStack.length > 0) {
                 const top = controlStack[controlStack.length - 1];
 
                 if (top.type === 'if') {
                     if (checkNextLineIsElse(i) || line.includes('else')) {
-                        // Если дальше идет else: прыгаем через него, выставляем метку false
                         asmList.push({ asm: `rjmp ${top.lblEnd}`, lineNum });
                         asmList.push({ asm: `${top.lblFalse}:`, lineNum });
-                        top.type = 'else'; // Превращаем текущий if в else
+                        top.type = 'else';
                     } else {
                         controlStack.pop();
                         asmList.push({ asm: `${top.lblFalse}:`, lineNum });
@@ -427,9 +472,7 @@ function compileCToAsm(cCode) {
                     asmList.push({ asm: 'reti', lineNum });
                 }
             }
-            if (line === '}') continue;
-            line = line.substring(1).trim();
-            if (!line) continue;
+            continue;
         }
 
         if (line.startsWith('else')) {
@@ -439,37 +482,39 @@ function compileCToAsm(cCode) {
 
         if (line === '{') continue;
 
-        // Переменные
+        // Объявление переменных (int x; uint32_t x = 0;)
         const declMatch = line.match(/\b(uint8_t|int8_t|uint16_t|int16_t|uint32_t|int)\s+([a-zA-Z0-9_]+)(\s*=\s*([^;]+))?;/);
         if (declMatch) {
             const varName = declMatch[2];
             let initVal = declMatch[4] ? declMatch[4].trim() : "0";
             const reg = 'r' + (regCounter++);
             varMap[varName] = { reg };
-            let constVal = evalSafe(applyDefines(initVal));
+            let constVal = evaluateCExpression(applyDefines(initVal), defines);
             if (constVal !== null) {
                 constVal = scaleThreshold(constVal);
-                asmList.push({ asm: `ldi ${reg}, ${constVal & 0xFF}`, lineNum });
+                const inst = { asm: `ldi ${reg}, ${constVal & 0xFF}`, lineNum };
+                if (!insideMain) globalInits.push(inst);
+                else asmList.push(inst);
             }
             continue;
         }
 
-        // Регистры: |=
+        // Регистры |=
         const portOrMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC|PCICR|EICRA|EIMSK)\s*\|\=\s*([^;]+);/);
         if (portOrMatch) {
             const portName = portOrMatch[1];
-            const mask = evalSafe(applyDefines(portOrMatch[2])) & 0xFF;
+            const mask = evaluateCExpression(applyDefines(portOrMatch[2]), defines) & 0xFF;
             asmList.push({ asm: `in r16, ${portName}`, lineNum });
             asmList.push({ asm: `ori r16, ${mask}`, lineNum });
             asmList.push({ asm: `out ${portName}, r16`, lineNum });
             continue;
         }
 
-        // Регистры: &= ~
+        // Регистры &= ~
         const portAndNotMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC)\s*&\=\s*~\s*\(?\s*([^;]+)\)?;/);
         if (portAndNotMatch) {
             const portName = portAndNotMatch[1];
-            const mask = evalSafe(applyDefines(portAndNotMatch[2].replace(/\)+$/, ''))) & 0xFF;
+            const mask = evaluateCExpression(applyDefines(portAndNotMatch[2].replace(/\)+$/, '')), defines) & 0xFF;
             const invMask = (~mask) & 0xFF;
             asmList.push({ asm: `in r16, ${portName}`, lineNum });
             asmList.push({ asm: `andi r16, ${invMask}`, lineNum });
@@ -477,11 +522,11 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Регистры: ^=
+        // Регистры ^=
         const portXorMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD)\s*\^\=\s*([^;]+);/);
         if (portXorMatch) {
             const portName = portXorMatch[1];
-            const mask = evalSafe(applyDefines(portXorMatch[2])) & 0xFF;
+            const mask = evaluateCExpression(applyDefines(portXorMatch[2]), defines) & 0xFF;
             asmList.push({ asm: `in r16, ${portName}`, lineNum });
             asmList.push({ asm: `ldi r17, ${mask}`, lineNum });
             asmList.push({ asm: `eor r16, r17`, lineNum });
@@ -489,14 +534,32 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Регистры: =
+        // ПРИСВАИВАНИЕ ПОРТУ: PORTD = 0xFF; ИЛИ PORTD = x; ИЛИ PORTD = x & 0x0F;
         const portAssignMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC|EICRA|EIMSK|PCICR|PCMSK0|PCMSK2)\s*=\s*([^;]+);/);
         if (portAssignMatch) {
             const portName = portAssignMatch[1];
-            const constVal = evalSafe(applyDefines(portAssignMatch[2].trim()));
-            if (constVal !== null) {
-                asmList.push({ asm: `ldi r16, ${constVal & 0xFF}`, lineNum });
-                asmList.push({ asm: `out ${portName}, r16`, lineNum });
+            let expr = applyDefines(portAssignMatch[2].trim());
+
+            if (expr.includes('&')) {
+                // Пример: PORTD = x & 0xC0;
+                const parts = expr.split('&');
+                const vName = parts[0].trim();
+                const mask = evaluateCExpression(applyDefines(parts[1]), defines);
+                if (varMap[vName]) {
+                    asmList.push({ asm: `mov r16, ${varMap[vName].reg}`, lineNum });
+                    asmList.push({ asm: `andi r16, ${(mask !== null ? mask : 0xFF) & 0xFF}`, lineNum });
+                    asmList.push({ asm: `out ${portName}, r16`, lineNum });
+                }
+            } else {
+                const constVal = evaluateCExpression(expr, defines);
+                if (constVal !== null) {
+                    // Пример: DDRD = 0xFF;
+                    asmList.push({ asm: `ldi r16, ${constVal & 0xFF}`, lineNum });
+                    asmList.push({ asm: `out ${portName}, r16`, lineNum });
+                } else if (varMap[expr]) {
+                    // Пример: PORTD = x; (ВЫВОД ПЕРЕМЕННОЙ В ПОРТ)
+                    asmList.push({ asm: `out ${portName}, ${varMap[expr].reg}`, lineNum });
+                }
             }
             continue;
         }
@@ -506,7 +569,7 @@ function compileCToAsm(cCode) {
         if (varAssignMatch) {
             const vName = varAssignMatch[1];
             if (varMap[vName]) {
-                let constVal = evalSafe(applyDefines(varAssignMatch[2]));
+                let constVal = evaluateCExpression(applyDefines(varAssignMatch[2]), defines);
                 if (constVal !== null) {
                     constVal = scaleThreshold(constVal);
                     asmList.push({ asm: `ldi ${varMap[vName].reg}, ${constVal & 0xFF}`, lineNum });
@@ -517,7 +580,7 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // Инкремент / декремент (x++;)
+        // Инкремент (x++;)
         const incMatch = line.match(/\b([a-zA-Z0-9_]+)\+\+;/);
         if (incMatch && varMap[incMatch[1]]) {
             asmList.push({ asm: `inc ${varMap[incMatch[1]].reg}`, lineNum });
@@ -536,7 +599,7 @@ function compileCToAsm(cCode) {
         let ifBtnMatch = line.match(/if\s*\(\s*!\s*\(\s*(PINB|PIND)\s*&\s*\(\s*1\s*<<\s*([^)]+)\)\s*\)\s*\)/);
         if (ifBtnMatch) {
             const pinPort = ifBtnMatch[1];
-            const bit = evalSafe(applyDefines(ifBtnMatch[2]));
+            const bit = evaluateCExpression(applyDefines(ifBtnMatch[2]), defines);
             const lblFalse = `lbl_false_${labelCounter++}`;
             const lblEnd = `lbl_end_${labelCounter++}`;
             asmList.push({ asm: `in r16, ${pinPort}`, lineNum });
@@ -546,12 +609,13 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // if с числовым сравнением (if (x >= 800000) или if (flag == 0))
+        // if со сравнением: if (x==800000) или if (flag==0)
         const ifCmpMatch = line.match(/if\s*\(\s*([a-zA-Z0-9_]+)\s*(==|!=|>=|>|<=|<)\s*([^)]+)\)/);
         if (ifCmpMatch) {
             const vName = ifCmpMatch[1];
             const op = ifCmpMatch[2];
-            let cmpVal = evalSafe(applyDefines(ifCmpMatch[3]));
+            let rawCmp = applyDefines(ifCmpMatch[3]);
+            let cmpVal = evaluateCExpression(rawCmp, defines);
 
             if (cmpVal !== null && varMap[vName]) {
                 cmpVal = scaleThreshold(cmpVal);
