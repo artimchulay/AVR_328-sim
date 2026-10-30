@@ -1057,3 +1057,28 @@ canvas#logicCanvas { display: block; }
         grid-template-columns: repeat(2, 1fr);
     }
 }
+/* Бейдж счетчика тактов в верхней шапке */
+.cycle-badge {
+    background: #080a0f;
+    border: 1px solid var(--border-color);
+    color: var(--accent-blue);
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-size: 0.78em;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* Защита от наезжания текста на корзину 🗑️ */
+.editor-status {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.slide-header-left {
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
