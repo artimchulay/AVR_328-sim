@@ -513,11 +513,11 @@ function renderExtraPins() {
     if (!grid) return;
     const portc = readRAM(IO.PORTC);
     const ddrc = readRAM(IO.DDRC);
-    const pinc = readRAM(IO.PINC);
 
     let html = '';
     for (let pin = 0; pin < 6; pin++) {
-        const isHigh = ((ddrc & (1 << pin)) ? (portc & (1 << pin)) : (pinc & (1 << pin))) !== 0;
+        // Светодиод горит ТОЛЬКО если программа настроила пин на ВЫХОД (DDR=1) и подала 1 (PORT=1)
+        const isHigh = ((ddrc & (1 << pin)) !== 0) && ((portc & (1 << pin)) !== 0);
         html += '<div class="led-col">';
         html += '<div class="led-light ' + (isHigh ? 'active-led-green' : '') + '"></div>';
         html += '<span class="led-bit-name">PC' + pin + '</span></div>';
