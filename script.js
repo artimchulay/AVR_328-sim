@@ -285,32 +285,84 @@ function validateSourceCode(text, lang) {
     }
 }
 
-/* ================= 3. АВТОДОПОЛНЕНИЕ GHOST TEXT + ПОЛНЫЙ ПОКАЗ ОШИБОК ================= */
+/* ================= 3. РАЗДЕЛЬНЫЕ СЛОВАРИ АВТОДОПОЛНЕНИЯ (ASM И C) ================= */
 
-const AUTOCOMPLETE_DICT = [
-    // 1. Шаблоны и библиотеки (высший приоритет)
+// Общие регистры микроконтроллера (доступны в обоих языках)
+const COMMON_REGISTERS = [
+    'PORTB', 'PORTC', 'PORTD', 'DDRB', 'DDRC', 'DDRD', 'PINB', 'PINC', 'PIND',
+    'ACSR', 'ADMUX', 'ADCSRA', 'ADCSRB', 'ADCH', 'ADCL', 'DIDR0', 'DIDR1',
+    'UDR0', 'UCSR0A', 'UCSR0B', 'UCSR0C', 'UBRR0L', 'UBRR0H',
+    'EICRA', 'EIMSK', 'EIFR', 'PCICR', 'PCIFR', 'PCMSK0', 'PCMSK1', 'PCMSK2',
+    'SREG', 'SPL', 'SPH'
+];
+
+// СЛОВАРЬ ТОЛЬКО ДЛЯ СИ (C)
+const DICT_C = [
+    // Шаблоны и библиотеки
     '#define F_CPU 16000000UL',
     '#include <avr/io.h>',
     '#include <util/delay.h>',
     '#include <avr/interrupt.h>',
     'int main(void)',
-    'void',            // СТРОГО перед volatile!
+    'void',            // Высший приоритет над volatile
     'unsigned char',
     'uint8_t',
     'uint16_t',
+    'uint32_t',
+    'int',
+    'char',
     'volatile',
+    'while (1)',
     'while',
-    '_delay_ms',
-    // 2. Векторы прерываний
-    'ISR(INT0_vect)', 'ISR(INT1_vect)', 'ISR(PCINT0_vect)', 'ISR(PCINT2_vect)', 'ISR(ADC_vect)', 'ISR(USART_RX_vect)',
-    // 3. Инструкции Ассемблера
-    'ldi', 'lpm', 'mov', 'add', 'adc', 'sub', 'subi', 'sbc', 'sbci', 'adiw', 'sbiw',
+    'if',
+    'else',
+    'for',
+    'return',
+    'break',
+    '_delay_ms(50);',
+    'sei();',
+    'cli();',
+    // Прерывания ISR
+    'ISR(INT0_vect)', 'ISR(INT1_vect)', 'ISR(PCINT0_vect)', 'ISR(PCINT2_vect)',
+    'ISR(ANALOG_COMP_vect)', 'ISR(ADC_vect)', 'ISR(USART_RX_vect)', 'ISR(USART_UDRE_vect)', 'ISR(USART_TX_vect)',
+    // Константы битов
+    'ISC00', 'ISC01', 'ISC10', 'ISC11', 'INT0', 'INT1', 'PCIE0', 'PCIE1', 'PCIE2',
+    'ADEN', 'ADSC', 'ADIE', 'ADLAR', 'REFS0', 'REFS1', 'ACD', 'ACBG', 'ACO', 'ACI', 'ACIE',
+    'TXEN0', 'RXEN0', 'UDRIE0', 'TXCIE0', 'RXCIE0', 'UCSZ00', 'UCSZ01',
+    'PB0', 'PB1', 'PB2', 'PB3', 'PB4', 'PB5',
+    'PD0', 'PD1', 'PD2', 'PD3', 'PD4', 'PD5', 'PD6', 'PD7',
+    'PC0', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5',
+    ...COMMON_REGISTERS
+];
+
+// СЛОВАРЬ ТОЛЬКО ДЛЯ АССЕМБЛЕРА (ASM)
+const DICT_ASM = [
+    // Директивы
+    '.include "m328pdef.inc"',
+    '.org 0x0000', '.org 0x0002', '.org 0x0004', '.org 0x0006', '.org 0x000A',
+    '.org 0x0024', '.org 0x0026', '.org 0x0028', '.org 0x002A',
+    '.equ CLK = 16000000',
+    '.equ BAUD = 9600',
+    '.def temp = r16',
+    '.cseg',
+    '.db',
+    // Полный набор инструкций ATmega328P
+    'ldi', 'mov', 'add', 'adc', 'sub', 'subi', 'sbc', 'sbci', 'adiw', 'sbiw',
     'and', 'andi', 'or', 'ori', 'eor', 'com', 'neg', 'inc', 'dec', 'tst', 'clr', 'ser',
-    'rjmp', 'jmp', 'breq', 'brne', 'brcs', 'brcc', 'brlo', 'brsh', 'brts', 'brtc',
-    'bst', 'bld', 'sbi', 'cbi', 'sbis', 'sbic', 'sei', 'cli', 'push', 'pop', 'ret', 'reti',
-    // 4. Регистры
-    'PORTB', 'PORTC', 'PORTD', 'DDRB', 'DDRC', 'DDRD', 'PINB', 'PINC', 'PIND',
-    'ACSR', 'ADMUX', 'ADCSRA', 'ADCH', 'ADCL', 'UDR0', 'UCSR0A', 'UCSR0B', 'UCSR0C', 'UBRR0L'
+    'lsl', 'lsr', 'asr', 'rol', 'ror',
+    'rjmp', 'jmp', 'call', 'ret', 'reti',
+    'breq', 'brne', 'brcs', 'brcc', 'brlo', 'brsh', 'brmi', 'brpl', 'brge', 'brlt',
+    'brhs', 'brhc', 'brts', 'brtc', 'brvs', 'brvc',
+    'cp', 'cpc', 'cpi', 'cpse', 'sbrs', 'sbrc',
+    'bst', 'bld', 'sbi', 'cbi', 'sbis', 'sbic', 'lpm',
+    'in', 'out', 'push', 'pop', 'lds', 'sts', 'ld', 'st',
+    'sec', 'clc', 'sez', 'clz', 'sen', 'cln', 'sev', 'clv', 'ses', 'cls', 'seh', 'clh', 'set', 'clt',
+    'sei', 'cli', 'nop', 'break',
+    // Регистры и указатели
+    'RAMEND', 'high(RAMEND)', 'low(RAMEND)',
+    'xl', 'xh', 'yl', 'yh', 'zl', 'zh',
+    'r16', 'r17', 'r18', 'r19', 'r20', 'r21', 'r22', 'r23', 'r24', 'r25', 'r26', 'r27', 'r28', 'r29', 'r30', 'r31',
+    ...COMMON_REGISTERS
 ];
 
 let currentGhostSuggestion = '';
@@ -326,22 +378,24 @@ function updateGhostAutocomplete() {
     const currentLine = textBefore.split('\n').pop();
     const trimmedLine = currentLine.trimStart();
 
+    // ВЫБОР АКТИВНОГО СЛОВАРЯ ПО ТЕКУЩЕМУ РЕЖИМУ (C или ASM)
+    const activeDict = (currentLang === 'c') ? DICT_C : DICT_ASM;
+
     let candidate = null;
     let prefix = '';
 
-    // А. Автодополнение целых директив (#include, #define, int main)
-    if (trimmedLine.startsWith('#') || trimmedLine.startsWith('int m')) {
-        candidate = AUTOCOMPLETE_DICT.find(w => w.startsWith(trimmedLine) && w !== trimmedLine);
+    // А. Автодополнение целых директив и сниппетов (#include, .org, .include, int main)
+    if (trimmedLine.startsWith('#') || trimmedLine.startsWith('.') || trimmedLine.startsWith('int m')) {
+        candidate = activeDict.find(w => w.startsWith(trimmedLine) && w !== trimmedLine);
         if (candidate) prefix = trimmedLine;
     }
 
-    // Б. Автодополнение обычных слов (команды, типы, регистры)
+    // Б. Автодополнение одиночных слов, команд и типов
     if (!candidate) {
-        const match = currentLine.match(/([a-zA-Z_0-9]+)$/);
+        const match = currentLine.match(/([.#a-zA-Z_0-9]+)$/);
         if (match && match[1].length >= 1) {
             prefix = match[1];
-            // Ищем первое подходящее слово с учетом настроенного приоритета
-            candidate = AUTOCOMPLETE_DICT.find(w => w.toLowerCase().startsWith(prefix.toLowerCase()) && w.toLowerCase() !== prefix.toLowerCase());
+            candidate = activeDict.find(w => w.toLowerCase().startsWith(prefix.toLowerCase()) && w.toLowerCase() !== prefix.toLowerCase());
         }
     }
 
@@ -360,7 +414,7 @@ function updateGhostAutocomplete() {
         if (mobileBtn) mobileBtn.textContent = '⇥ Tab';
     }
 
-    // В. Всплывающее окно для ошибок дебаггера при клике
+    // Всплывающее окно ошибки дебаггера при клике
     const statusElem = document.getElementById('compilerStatus');
     if (statusElem && cpu.error) {
         statusElem.title = cpu.error + ' (Нажмите, чтобы прочитать полностью)';
