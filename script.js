@@ -285,16 +285,32 @@ function validateSourceCode(text, lang) {
     }
 }
 
-/* ================= 3. АВТОДОПОЛНЕНИЕ GHOST TEXT ================= */
+/* ================= 3. АВТОДОПОЛНЕНИЕ GHOST TEXT + ПОЛНЫЙ ПОКАЗ ОШИБОК ================= */
 
 const AUTOCOMPLETE_DICT = [
+    // 1. Шаблоны и библиотеки (высший приоритет)
+    '#define F_CPU 16000000UL',
+    '#include <avr/io.h>',
+    '#include <util/delay.h>',
+    '#include <avr/interrupt.h>',
+    'int main(void)',
+    'void',            // СТРОГО перед volatile!
+    'unsigned char',
+    'uint8_t',
+    'uint16_t',
+    'volatile',
+    'while',
+    '_delay_ms',
+    // 2. Векторы прерываний
+    'ISR(INT0_vect)', 'ISR(INT1_vect)', 'ISR(PCINT0_vect)', 'ISR(PCINT2_vect)', 'ISR(ADC_vect)', 'ISR(USART_RX_vect)',
+    // 3. Инструкции Ассемблера
     'ldi', 'lpm', 'mov', 'add', 'adc', 'sub', 'subi', 'sbc', 'sbci', 'adiw', 'sbiw',
     'and', 'andi', 'or', 'ori', 'eor', 'com', 'neg', 'inc', 'dec', 'tst', 'clr', 'ser',
     'rjmp', 'jmp', 'breq', 'brne', 'brcs', 'brcc', 'brlo', 'brsh', 'brts', 'brtc',
     'bst', 'bld', 'sbi', 'cbi', 'sbis', 'sbic', 'sei', 'cli', 'push', 'pop', 'ret', 'reti',
+    // 4. Регистры
     'PORTB', 'PORTC', 'PORTD', 'DDRB', 'DDRC', 'DDRD', 'PINB', 'PINC', 'PIND',
-    'ACSR', 'ADMUX', 'ADCSRA', 'ADCH', 'ADCL', 'UDR0', 'UCSR0A', 'UCSR0B', 'UCSR0C', 'UBRR0L',
-    'unsigned char', 'uint8_t', 'uint16_t', 'while', 'volatile', '_delay_ms', 'ISR(INT0_vect)', 'ISR(ADC_vect)'
+    'ACSR', 'ADMUX', 'ADCSRA', 'ADCH', 'ADCL', 'UDR0', 'UCSR0A', 'UCSR0B', 'UCSR0C', 'UBRR0L'
 ];
 
 let currentGhostSuggestion = '';
@@ -307,20 +323,30 @@ function updateGhostAutocomplete() {
 
     const cursor = txtArea.selectionStart;
     const textBefore = txtArea.value.substring(0, cursor);
+    const currentLine = textBefore.split('\n').pop();
+    const trimmedLine = currentLine.trimStart();
 
-    const match = textBefore.match(/([a-zA-Z_0-9]+)$/);
-    if (!match || match[1].length < 1) {
-        currentGhostSuggestion = '';
-        ghostOverlay.innerHTML = '';
-        if (mobileBtn) mobileBtn.textContent = '⇥ Tab';
-        return;
+    let candidate = null;
+    let prefix = '';
+
+    // А. Автодополнение целых директив (#include, #define, int main)
+    if (trimmedLine.startsWith('#') || trimmedLine.startsWith('int m')) {
+        candidate = AUTOCOMPLETE_DICT.find(w => w.startsWith(trimmedLine) && w !== trimmedLine);
+        if (candidate) prefix = trimmedLine;
     }
 
-    const currentWord = match[1];
-    const candidate = AUTOCOMPLETE_DICT.find(w => w.toLowerCase().startsWith(currentWord.toLowerCase()) && w.toLowerCase() !== currentWord.toLowerCase());
+    // Б. Автодополнение обычных слов (команды, типы, регистры)
+    if (!candidate) {
+        const match = currentLine.match(/([a-zA-Z_0-9]+)$/);
+        if (match && match[1].length >= 1) {
+            prefix = match[1];
+            // Ищем первое подходящее слово с учетом настроенного приоритета
+            candidate = AUTOCOMPLETE_DICT.find(w => w.toLowerCase().startsWith(prefix.toLowerCase()) && w.toLowerCase() !== prefix.toLowerCase());
+        }
+    }
 
-    if (candidate) {
-        const suffix = candidate.substring(currentWord.length);
+    if (candidate && prefix) {
+        const suffix = candidate.substring(prefix.length);
         currentGhostSuggestion = suffix;
 
         const beforeWord = escapeHtml(txtArea.value.substring(0, cursor));
@@ -332,6 +358,14 @@ function updateGhostAutocomplete() {
         currentGhostSuggestion = '';
         ghostOverlay.innerHTML = '';
         if (mobileBtn) mobileBtn.textContent = '⇥ Tab';
+    }
+
+    // В. Всплывающее окно для ошибок дебаггера при клике
+    const statusElem = document.getElementById('compilerStatus');
+    if (statusElem && cpu.error) {
+        statusElem.title = cpu.error + ' (Нажмите, чтобы прочитать полностью)';
+        statusElem.style.cursor = 'pointer';
+        statusElem.onclick = () => alert('⚠️ Ошибка дебаггера:\n\n' + cpu.error);
     }
 }
 
