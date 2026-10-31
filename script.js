@@ -2,17 +2,18 @@
 /* =========================================================
    ЯДРО ЭМУЛЯТОРА AVR ATmega328P + SALEAE LOGIC (ПОЛНАЯ ВЕРСИЯ)
    ========================================================= */
-
 const IO = {
     PINB:   0x23, DDRB:   0x24, PORTB:  0x25,
     PINC:   0x26, DDRC:   0x27, PORTC:  0x28,
     PIND:   0x29, DDRD:   0x2A, PORTD:  0x2B,
+    EECR:   0x3F, EEDR:   0x40, EEARL:  0x41, EEARH: 0x42, // EEPROM
+    TCCR0A: 0x44, TCCR0B: 0x45, TCNT0:  0x46, OCR0A: 0x47, OCR0B: 0x48, // Таймер/ШИМ
     PCIFR:  0x3B, EIFR:   0x3C, EIMSK:  0x3D,
     SPL:    0x5D, SPH:    0x5E, SREG:   0x5F,
-    ACSR:   0x50, // Компаратор (Тема 7)
+    ACSR:   0x50,
     PCICR:  0x68, EICRA:  0x69,
     PCMSK0: 0x6B, PCMSK1: 0x6C, PCMSK2: 0x6D,
-    ADCL:   0x78, ADCH:   0x79, // Данные АЦП (Тема 7)
+    ADCL:   0x78, ADCH:   0x79,
     ADCSRA: 0x7A, ADCSRB: 0x7B, ADMUX:  0x7C,
     DIDR0:  0x7E, DIDR1:  0x7F,
     UCSR0A: 0xC0, UCSR0B: 0xC1, UCSR0C: 0xC2,
@@ -59,7 +60,13 @@ const activePanels = {
     analyzer: true,
     cpu: true
 };
-
+function initEepromStorage() {
+    try {
+        const saved = localStorage.getItem('avr_eeprom');
+        if (saved) return new Uint8Array(JSON.parse(saved));
+    } catch(e) {}
+    return new Uint8Array(1024); // 1024 байта чистой EEPROM
+}
 const cpu = {
     r: new Uint8Array(32),
     prevR: new Uint8Array(32),
@@ -87,6 +94,7 @@ const cpu = {
     prevPinB: 0xFF,
     prevPinC: 0xFF,
     prevPinD: 0xFF
+    eeprom: initEepromStorage(),
 };
 
 const defaultButtons = [
@@ -842,10 +850,11 @@ function evaluateCExpression(expr, defines) {
         return null;
     }
 }
-
 function scaleThreshold(val) {
+    if (val === null || val === undefined) return 0;
     if (val >= 10000) return Math.max(5, Math.round(val / 20000));
-    return Math.min(255, Math.max(0, val));
+    // -2 превращается в 0xFE (254), а не в 0!
+    return (val < 0) ? (val & 0xFF) : Math.min(255, val);
 }
 
 function compileCToAsm(cCode) {
@@ -1403,6 +1412,29 @@ function writeRAM(addr, val) {
     if (addr === IO.EIFR || addr === IO.PCIFR) {
         cpu.ram[addr] &= ~val;
         return;
+   // Аппаратная запись и чтение энергонезависимой памяти EEPROM
+    if (addr === IO.EECR) {
+        cpu.ram[IO.EECR] = val;
+        const eear = readRAM(IO.EEARL) | ((readRAM(IO.EEARH) & 0x03) << 8);
+        
+        // Запись (бит EEPE = 1) -> сохраняем в память и в localStorage
+        if (val & (1 << 1)) {
+            const dataByte = readRAM(IO.EEDR);
+            if (eear < cpu.eeprom.length) {
+                cpu.eeprom[eear] = dataByte;
+                try { localStorage.setItem('avr_eeprom', JSON.stringify(Array.from(cpu.eeprom))); } catch(e){}
+            }
+            cpu.ram[IO.EECR] &= ~(1 << 1); // Аппаратный сброс флага записи
+        }
+        // Чтение (бит EERE = 1) -> переносим байт из EEPROM в регистр EEDR
+        if (val & (1 << 0)) {
+            if (eear < cpu.eeprom.length) {
+                cpu.ram[IO.EEDR] = cpu.eeprom[eear];
+            }
+            cpu.ram[IO.EECR] &= ~(1 << 0);
+        }
+        return;
+    }
     }
 
     cpu.ram[addr] = val;
@@ -1749,7 +1781,28 @@ function cpuStep(silent = false) {
             }
             break;
         }
-
+          
+         case 'mul': {
+            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
+            const res = (cpu.r[r1] * cpu.r[r2]) & 0xFFFF;
+            cpu.r[0] = res & 0xFF;        // Младший байт в R0
+            cpu.r[1] = (res >> 8) & 0xFF; // Старший байт в R1
+            cpu.sreg.C = ((res >> 15) & 1);
+            cpu.sreg.Z = (res === 0) ? 1 : 0;
+            break;
+        }
+        case 'muls': {
+            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
+            const s1 = (cpu.r[r1] & 0x80) ? (cpu.r[r1] - 256) : cpu.r[r1];
+            const s2 = (cpu.r[r2] & 0x80) ? (cpu.r[r2] - 256) : cpu.r[r2];
+            const res = (s1 * s2) & 0xFFFF;
+            cpu.r[0] = res & 0xFF;
+            cpu.r[1] = (res >> 8) & 0xFF;
+            cpu.sreg.C = ((res >> 15) & 1);
+            cpu.sreg.Z = (res === 0) ? 1 : 0;
+            break;
+        }
+          
         case 'add': {
             const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
             const res = cpu.r[r1] + cpu.r[r2];
@@ -2321,6 +2374,7 @@ function setMemView(view) {
     document.getElementById('btnMemRAM')?.classList.toggle('active', view === 'ram');
     document.getElementById('btnMemStack')?.classList.toggle('active', view === 'stack');
     document.getElementById('btnMemFlash')?.classList.toggle('active', view === 'flash');
+    document.getElementById('btnMemEEPROM')?.classList.toggle('active', view === 'eeprom');
     renderMemoryDumps();
 }
 
@@ -2366,6 +2420,30 @@ function renderMemoryDumps() {
             }
             output += '0x' + addr.toString(16).padStart(4, '0').toUpperCase() + ':  ' + bytes.join('  ') + '\n';
         }
+       } else if (cpu.memView === 'flash') {
+        for (let addr = 0x0000; addr <= 0x00A0; addr += 8) {
+            let bytes = [];
+            for (let b = 0; b < 8; b++) {
+                let val = cpu.flashBytes[addr + b] || 0;
+                bytes.push(cpu.memFormat === 'dec' ? val.toString(10).padStart(3, '0') : val.toString(16).padStart(2, '0').toUpperCase());
+            }
+            output += '0x' + addr.toString(16).padStart(4, '0').toUpperCase() + ':  ' + bytes.join('  ') + '\n';
+        }
+   
+       } else if (cpu.memView === 'eeprom') {
+           for (let addr = 0x0000; addr <= 0x0078; addr += 8) {
+            let bytes = [];
+            for (let b = 0; b < 8; b++) {
+                let val = cpu.eeprom[addr + b] || 0;
+                bytes.push(cpu.memFormat === 'dec' ? val.toString(10).padStart(3, '0') : val.toString(16).padStart(2, '0').toUpperCase());
+            }
+            output += '0x' + addr.toString(16).padStart(4, '0').toUpperCase() + ':  ' + bytes.join('  ') + '\n';
+        }
+
+    }
+
+    memBox.textContent = output;
+}
     }
 
     memBox.textContent = output;
