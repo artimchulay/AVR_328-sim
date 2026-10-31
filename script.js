@@ -1,7 +1,7 @@
-
 /* =========================================================
-   ЯДРО ЭМУЛЯТОРА AVR ATmega328P + SALEAE LOGIC (ПОЛНАЯ ВЕРСИЯ)
+   ЯДРО ЭМУЛЯТОРА AVR ATmega328P + SALEAE LOGIC (ПОЛНЫЙ КОД)
    ========================================================= */
+
 const IO = {
     PINB:   0x23, DDRB:   0x24, PORTB:  0x25,
     PINC:   0x26, DDRC:   0x27, PORTC:  0x28,
@@ -10,10 +10,10 @@ const IO = {
     TCCR0A: 0x44, TCCR0B: 0x45, TCNT0:  0x46, OCR0A: 0x47, OCR0B: 0x48, // Таймер/ШИМ
     PCIFR:  0x3B, EIFR:   0x3C, EIMSK:  0x3D,
     SPL:    0x5D, SPH:    0x5E, SREG:   0x5F,
-    ACSR:   0x50,
+    ACSR:   0x50, // Компаратор (Тема 7)
     PCICR:  0x68, EICRA:  0x69,
     PCMSK0: 0x6B, PCMSK1: 0x6C, PCMSK2: 0x6D,
-    ADCL:   0x78, ADCH:   0x79,
+    ADCL:   0x78, ADCH:   0x79, // АЦП (Тема 7)
     ADCSRA: 0x7A, ADCSRB: 0x7B, ADMUX:  0x7C,
     DIDR0:  0x7E, DIDR1:  0x7F,
     UCSR0A: 0xC0, UCSR0B: 0xC1, UCSR0C: 0xC2,
@@ -42,6 +42,7 @@ const CYCLES = {
     tst: 1, clr: 1, ser: 1, in: 1, out: 1, sec: 1, clc: 1, sez: 1, clz: 1,
     sen: 1, cln: 1, sev: 1, clv: 1, ses: 1, cls: 1, seh: 1, clh: 1, set: 1, clt: 1,
     sei: 1, cli: 1, sbi: 2, cbi: 2, sbis: 1, sbic: 1, bst: 1, bld: 1, lpm: 3,
+    mul: 2, muls: 2,
     lsl: 1, lsr: 1, asr: 1, rol: 1, ror: 1, cp: 1, cpc: 1, cpi: 1, cpse: 1,
     adiw: 2, sbiw: 2, sbrs: 1, sbrc: 1, rjmp: 2, jmp: 3, call: 4, ret: 4, reti: 4,
     lds: 2, sts: 2, ld: 1, st: 1, push: 2, pop: 2,
@@ -60,18 +61,19 @@ const activePanels = {
     analyzer: true,
     cpu: true
 };
-function initEepromStorage() {
-    try {
-        const saved = localStorage.getItem('avr_eeprom');
-        if (saved) return new Uint8Array(JSON.parse(saved));
-    } catch(e) {}
-    return new Uint8Array(1024); // 1024 байта чистой EEPROM
-}
+
 const cpu = {
     r: new Uint8Array(32),
     prevR: new Uint8Array(32),
     ram: new Uint8Array(0x0900),
     flashBytes: new Uint8Array(32768),
+    eeprom: (function() {
+        try {
+            const s = localStorage.getItem('avr_eeprom');
+            if (s) return new Uint8Array(JSON.parse(s));
+        } catch(e) {}
+        return new Uint8Array(1024);
+    })(),
     pc: 0,
     sp: 0x08FF,
     sreg: { C:0, Z:0, N:0, V:0, S:0, H:0, T:0, I:0 },
@@ -94,7 +96,6 @@ const cpu = {
     prevPinB: 0xFF,
     prevPinC: 0xFF,
     prevPinD: 0xFF
-    eeprom: initEepromStorage(),
 };
 
 const defaultButtons = [
@@ -111,11 +112,10 @@ const defaultButtons = [
 let vButtons = [...defaultButtons];
 let customIoComponents = [];
 
-/* ================= 1. НАВИГАЦИЯ И ПАНЕЛИ ================= */
+/* ================= 1. НАВИГАЦИЯ ================= */
 
 function togglePanel(panelName) {
     const isMobile = window.innerWidth <= 900;
-
     if (isMobile) {
         PANEL_LIST.forEach(name => {
             activePanels[name] = (name === panelName);
@@ -127,16 +127,13 @@ function togglePanel(panelName) {
     } else {
         const activeCount = Object.values(activePanels).filter(Boolean).length;
         if (activePanels[panelName] && activeCount <= 1) return;
-
         activePanels[panelName] = !activePanels[panelName];
 
         const pElem = document.getElementById('panel_' + panelName);
         const tBtn = document.getElementById('tabBtn_' + panelName);
-
         if (pElem) pElem.classList.toggle('panel-hidden', !activePanels[panelName]);
         if (tBtn) tBtn.classList.toggle('active', activePanels[panelName]);
     }
-
     if (panelName === 'analyzer' && activePanels.analyzer) {
         setTimeout(resizeAnalyzerCanvas, 40);
     }
@@ -160,13 +157,13 @@ function switchBoardBottomTab(tab) {
     if (!isUart) renderExtraPins();
 }
 
-/* ================= 2. ДЕБАГГЕР: АНАЛИЗАТОР ОПЕЧАТОК И СКОБОК ================= */
+/* ================= 2. ДЕБАГГЕР: АНАЛИЗ ОШИБОК И СКОБОК ================= */
 
 const KNOWN_OPS = new Set([
     'ldi','mov','add','adc','sub','subi','sbc','sbci','inc','dec','lsl','lsr','asr','rol','ror',
     'neg','com','and','andi','or','ori','eor','tst','clr','ser','cpi','cp','cpse','sbrs','sbrc',
     'sec','clc','sez','clz','sen','cln','sev','clv','ses','cls','seh','clh','set','clt',
-    'bst','bld','sbi','cbi','sbis','sbic','lpm',
+    'bst','bld','sbi','cbi','sbis','sbic','lpm','mul','muls',
     'adiw','sbiw','st','ld','sts','lds','push','pop','jmp','rjmp','breq','brne','brcs','brcc',
     'brlo','brsh','brmi','brpl','brge','brlt','brhs','brhc','brts','brtc','brvs','brvc',
     'call','ret','reti','sei','cli','in','out','break','nop'
@@ -190,7 +187,6 @@ function levenshteinDistance(s1, s2) {
     const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
     for (let i = 0; i <= m; i++) dp[i][0] = i;
     for (let j = 0; j <= n; j++) dp[0][j] = j;
-
     for (let i = 1; i <= m; i++) {
         for (let j = 1; j <= n; j++) {
             const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
@@ -293,9 +289,8 @@ function validateSourceCode(text, lang) {
     }
 }
 
-/* ================= 3. РАЗДЕЛЬНЫЕ СЛОВАРИ АВТОДОПОЛНЕНИЯ (ASM И C) ================= */
+/* ================= 3. АВТОДОПОЛНЕНИЕ GHOST TEXT ================= */
 
-// Общие регистры микроконтроллера (доступны в обоих языках)
 const COMMON_REGISTERS = [
     'PORTB', 'PORTC', 'PORTD', 'DDRB', 'DDRC', 'DDRD', 'PINB', 'PINC', 'PIND',
     'ACSR', 'ADMUX', 'ADCSRA', 'ADCSRB', 'ADCH', 'ADCL', 'DIDR0', 'DIDR1',
@@ -304,15 +299,13 @@ const COMMON_REGISTERS = [
     'SREG', 'SPL', 'SPH'
 ];
 
-// СЛОВАРЬ ТОЛЬКО ДЛЯ СИ (C)
 const DICT_C = [
-    // Шаблоны и библиотеки
     '#define F_CPU 16000000UL',
     '#include <avr/io.h>',
     '#include <util/delay.h>',
     '#include <avr/interrupt.h>',
     'int main(void)',
-    'void',            // Высший приоритет над volatile
+    'void',
     'unsigned char',
     'uint8_t',
     'uint16_t',
@@ -330,10 +323,8 @@ const DICT_C = [
     '_delay_ms(50);',
     'sei();',
     'cli();',
-    // Прерывания ISR
     'ISR(INT0_vect)', 'ISR(INT1_vect)', 'ISR(PCINT0_vect)', 'ISR(PCINT2_vect)',
     'ISR(ANALOG_COMP_vect)', 'ISR(ADC_vect)', 'ISR(USART_RX_vect)', 'ISR(USART_UDRE_vect)', 'ISR(USART_TX_vect)',
-    // Константы битов
     'ISC00', 'ISC01', 'ISC10', 'ISC11', 'INT0', 'INT1', 'PCIE0', 'PCIE1', 'PCIE2',
     'ADEN', 'ADSC', 'ADIE', 'ADLAR', 'REFS0', 'REFS1', 'ACD', 'ACBG', 'ACO', 'ACI', 'ACIE',
     'TXEN0', 'RXEN0', 'UDRIE0', 'TXCIE0', 'RXCIE0', 'UCSZ00', 'UCSZ01',
@@ -343,9 +334,7 @@ const DICT_C = [
     ...COMMON_REGISTERS
 ];
 
-// СЛОВАРЬ ТОЛЬКО ДЛЯ АССЕМБЛЕРА (ASM)
 const DICT_ASM = [
-    // Директивы
     '.include "m328pdef.inc"',
     '.org 0x0000', '.org 0x0002', '.org 0x0004', '.org 0x0006', '.org 0x000A',
     '.org 0x0024', '.org 0x0026', '.org 0x0028', '.org 0x002A',
@@ -354,7 +343,6 @@ const DICT_ASM = [
     '.def temp = r16',
     '.cseg',
     '.db',
-    // Полный набор инструкций ATmega328P
     'ldi', 'mov', 'add', 'adc', 'sub', 'subi', 'sbc', 'sbci', 'adiw', 'sbiw',
     'and', 'andi', 'or', 'ori', 'eor', 'com', 'neg', 'inc', 'dec', 'tst', 'clr', 'ser',
     'lsl', 'lsr', 'asr', 'rol', 'ror',
@@ -362,11 +350,10 @@ const DICT_ASM = [
     'breq', 'brne', 'brcs', 'brcc', 'brlo', 'brsh', 'brmi', 'brpl', 'brge', 'brlt',
     'brhs', 'brhc', 'brts', 'brtc', 'brvs', 'brvc',
     'cp', 'cpc', 'cpi', 'cpse', 'sbrs', 'sbrc',
-    'bst', 'bld', 'sbi', 'cbi', 'sbis', 'sbic', 'lpm',
+    'bst', 'bld', 'sbi', 'cbi', 'sbis', 'sbic', 'lpm', 'mul', 'muls',
     'in', 'out', 'push', 'pop', 'lds', 'sts', 'ld', 'st',
     'sec', 'clc', 'sez', 'clz', 'sen', 'cln', 'sev', 'clv', 'ses', 'cls', 'seh', 'clh', 'set', 'clt',
     'sei', 'cli', 'nop', 'break',
-    // Регистры и указатели
     'RAMEND', 'high(RAMEND)', 'low(RAMEND)',
     'xl', 'xh', 'yl', 'yh', 'zl', 'zh',
     'r16', 'r17', 'r18', 'r19', 'r20', 'r21', 'r22', 'r23', 'r24', 'r25', 'r26', 'r27', 'r28', 'r29', 'r30', 'r31',
@@ -386,19 +373,15 @@ function updateGhostAutocomplete() {
     const currentLine = textBefore.split('\n').pop();
     const trimmedLine = currentLine.trimStart();
 
-    // ВЫБОР АКТИВНОГО СЛОВАРЯ ПО ТЕКУЩЕМУ РЕЖИМУ (C или ASM)
     const activeDict = (currentLang === 'c') ? DICT_C : DICT_ASM;
-
     let candidate = null;
     let prefix = '';
 
-    // А. Автодополнение целых директив и сниппетов (#include, .org, .include, int main)
     if (trimmedLine.startsWith('#') || trimmedLine.startsWith('.') || trimmedLine.startsWith('int m')) {
         candidate = activeDict.find(w => w.startsWith(trimmedLine) && w !== trimmedLine);
         if (candidate) prefix = trimmedLine;
     }
 
-    // Б. Автодополнение одиночных слов, команд и типов
     if (!candidate) {
         const match = currentLine.match(/([.#a-zA-Z_0-9]+)$/);
         if (match && match[1].length >= 1) {
@@ -410,11 +393,9 @@ function updateGhostAutocomplete() {
     if (candidate && prefix) {
         const suffix = candidate.substring(prefix.length);
         currentGhostSuggestion = suffix;
-
         const beforeWord = escapeHtml(txtArea.value.substring(0, cursor));
         const afterCursor = escapeHtml(txtArea.value.substring(cursor));
         ghostOverlay.innerHTML = beforeWord + '<span class="ghost-hint">' + escapeHtml(suffix) + '</span>' + afterCursor;
-
         if (mobileBtn) mobileBtn.textContent = '⇥ Tab: ' + candidate;
     } else {
         currentGhostSuggestion = '';
@@ -422,7 +403,6 @@ function updateGhostAutocomplete() {
         if (mobileBtn) mobileBtn.textContent = '⇥ Tab';
     }
 
-    // Всплывающее окно ошибки дебаггера при клике
     const statusElem = document.getElementById('compilerStatus');
     if (statusElem && cpu.error) {
         statusElem.title = cpu.error + ' (Нажмите, чтобы прочитать полностью)';
@@ -612,7 +592,6 @@ function renderExtraPins() {
 
     let html = '';
     for (let pin = 0; pin < 6; pin++) {
-        // Светодиод горит ТОЛЬКО если программа настроила пин на ВЫХОД (DDR=1) и подала 1 (PORT=1)
         const isHigh = ((ddrc & (1 << pin)) !== 0) && ((portc & (1 << pin)) !== 0);
         html += '<div class="led-col">';
         html += '<div class="led-light ' + (isHigh ? 'active-led-green' : '') + '"></div>';
@@ -850,10 +829,11 @@ function evaluateCExpression(expr, defines) {
         return null;
     }
 }
+
+// ИСПРАВЛЕНО: поддержка отрицательных чисел (-2 -> 0xFE = 254)
 function scaleThreshold(val) {
     if (val === null || val === undefined) return 0;
     if (val >= 10000) return Math.max(5, Math.round(val / 20000));
-    // -2 превращается в 0xFE (254), а не в 0!
     return (val < 0) ? (val & 0xFF) : Math.min(255, val);
 }
 
@@ -1176,10 +1156,10 @@ function compileCToAsm(cCode) {
                 asmList.push({ asm: 'cpi ' + compReg + ', ' + (cmpVal & 0xFF), lineNum });
                 if (op === '==')      asmList.push({ asm: 'brne ' + lblFalse, lineNum });
                 else if (op === '!=') asmList.push({ asm: 'breq ' + lblFalse, lineNum });
-                else if (op === '>=') asmList.push({ asm: 'brlo ' + lblFalse, lineNum });
-                else if (op === '<')  asmList.push({ asm: 'brsh ' + lblFalse, lineNum });
-                else if (op === '>')  asmList.push({ asm: 'brls ' + lblFalse, lineNum });
-                else if (op === '<=') asmList.push({ asm: 'brhi ' + lblFalse, lineNum });
+                else if (op === '>=') asmList.push({ asm: 'brge ' + lblFalse, lineNum });
+                else if (op === '<')  asmList.push({ asm: 'brlt ' + lblFalse, lineNum });
+                else if (op === '>')  asmList.push({ asm: 'brgt ' + lblFalse, lineNum });
+                else if (op === '<=') asmList.push({ asm: 'brle ' + lblFalse, lineNum });
 
                 controlStack.push({ type: 'if', lblFalse, lblEnd });
                 continue;
@@ -1399,7 +1379,7 @@ function resolveLabel(target, lineNum) {
     return cpu.labels[key];
 }
 
-/* ================= 9. ДОСТУП К ПАМЯТИ И СТЕК ================= */
+/* ================= 9. ДОСТУП К ПАМЯТИ И EEPROM ================= */
 
 function writeRAM(addr, val) {
     val &= 0xFF;
@@ -1412,21 +1392,20 @@ function writeRAM(addr, val) {
     if (addr === IO.EIFR || addr === IO.PCIFR) {
         cpu.ram[addr] &= ~val;
         return;
-   // Аппаратная запись и чтение энергонезависимой памяти EEPROM
+    }
+
+    // Запись / Чтение энергонезависимой памяти EEPROM
     if (addr === IO.EECR) {
         cpu.ram[IO.EECR] = val;
         const eear = readRAM(IO.EEARL) | ((readRAM(IO.EEARH) & 0x03) << 8);
-        
-        // Запись (бит EEPE = 1) -> сохраняем в память и в localStorage
         if (val & (1 << 1)) {
             const dataByte = readRAM(IO.EEDR);
             if (eear < cpu.eeprom.length) {
                 cpu.eeprom[eear] = dataByte;
                 try { localStorage.setItem('avr_eeprom', JSON.stringify(Array.from(cpu.eeprom))); } catch(e){}
             }
-            cpu.ram[IO.EECR] &= ~(1 << 1); // Аппаратный сброс флага записи
+            cpu.ram[IO.EECR] &= ~(1 << 1);
         }
-        // Чтение (бит EERE = 1) -> переносим байт из EEPROM в регистр EEDR
         if (val & (1 << 0)) {
             if (eear < cpu.eeprom.length) {
                 cpu.ram[IO.EEDR] = cpu.eeprom[eear];
@@ -1434,7 +1413,6 @@ function writeRAM(addr, val) {
             cpu.ram[IO.EECR] &= ~(1 << 0);
         }
         return;
-    }
     }
 
     cpu.ram[addr] = val;
@@ -1733,10 +1711,31 @@ function cpuStep(silent = false) {
             let isPostInc = false;
             if (a.length >= 1) destReg = parseReg(a[0]);
             if (a.length >= 2 && a[1].includes('+')) isPostInc = true;
-
             const zAddr = getPointerAddr('z');
             cpu.r[destReg] = cpu.flashBytes[zAddr] || 0;
             if (isPostInc) setPointerAddr('z', zAddr + 1);
+            break;
+        }
+
+        // Аппаратное умножение (MUL / MULS)
+        case 'mul': {
+            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
+            const res = (cpu.r[r1] * cpu.r[r2]) & 0xFFFF;
+            cpu.r[0] = res & 0xFF;
+            cpu.r[1] = (res >> 8) & 0xFF;
+            cpu.sreg.C = ((res >> 15) & 1);
+            cpu.sreg.Z = (res === 0) ? 1 : 0;
+            break;
+        }
+        case 'muls': {
+            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
+            const s1 = (cpu.r[r1] & 0x80) ? (cpu.r[r1] - 256) : cpu.r[r1];
+            const s2 = (cpu.r[r2] & 0x80) ? (cpu.r[r2] - 256) : cpu.r[r2];
+            const res = (s1 * s2) & 0xFFFF;
+            cpu.r[0] = res & 0xFF;
+            cpu.r[1] = (res >> 8) & 0xFF;
+            cpu.sreg.C = ((res >> 15) & 1);
+            cpu.sreg.Z = (res === 0) ? 1 : 0;
             break;
         }
 
@@ -1781,28 +1780,7 @@ function cpuStep(silent = false) {
             }
             break;
         }
-          
-         case 'mul': {
-            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
-            const res = (cpu.r[r1] * cpu.r[r2]) & 0xFFFF;
-            cpu.r[0] = res & 0xFF;        // Младший байт в R0
-            cpu.r[1] = (res >> 8) & 0xFF; // Старший байт в R1
-            cpu.sreg.C = ((res >> 15) & 1);
-            cpu.sreg.Z = (res === 0) ? 1 : 0;
-            break;
-        }
-        case 'muls': {
-            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
-            const s1 = (cpu.r[r1] & 0x80) ? (cpu.r[r1] - 256) : cpu.r[r1];
-            const s2 = (cpu.r[r2] & 0x80) ? (cpu.r[r2] - 256) : cpu.r[r2];
-            const res = (s1 * s2) & 0xFFFF;
-            cpu.r[0] = res & 0xFF;
-            cpu.r[1] = (res >> 8) & 0xFF;
-            cpu.sreg.C = ((res >> 15) & 1);
-            cpu.sreg.Z = (res === 0) ? 1 : 0;
-            break;
-        }
-          
+
         case 'add': {
             const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
             const res = cpu.r[r1] + cpu.r[r2];
@@ -2367,7 +2345,7 @@ function updateSpeed(val) {
     document.getElementById('speedVal').textContent = cpu.speed + ' оп/с';
 }
 
-/* ================= 16. ДАМПЫ ПАМЯТИ: SRAM, СТЕК И FLASH ================= */
+/* ================= 16. ДАМПЫ ПАМЯТИ: SRAM, СТЕК, FLASH И EEPROM ================= */
 
 function setMemView(view) {
     cpu.memView = view;
@@ -2420,18 +2398,8 @@ function renderMemoryDumps() {
             }
             output += '0x' + addr.toString(16).padStart(4, '0').toUpperCase() + ':  ' + bytes.join('  ') + '\n';
         }
-       } else if (cpu.memView === 'flash') {
-        for (let addr = 0x0000; addr <= 0x00A0; addr += 8) {
-            let bytes = [];
-            for (let b = 0; b < 8; b++) {
-                let val = cpu.flashBytes[addr + b] || 0;
-                bytes.push(cpu.memFormat === 'dec' ? val.toString(10).padStart(3, '0') : val.toString(16).padStart(2, '0').toUpperCase());
-            }
-            output += '0x' + addr.toString(16).padStart(4, '0').toUpperCase() + ':  ' + bytes.join('  ') + '\n';
-        }
-   
-       } else if (cpu.memView === 'eeprom') {
-           for (let addr = 0x0000; addr <= 0x0078; addr += 8) {
+    } else if (cpu.memView === 'eeprom') {
+        for (let addr = 0x0000; addr <= 0x0078; addr += 8) {
             let bytes = [];
             for (let b = 0; b < 8; b++) {
                 let val = cpu.eeprom[addr + b] || 0;
@@ -2439,18 +2407,15 @@ function renderMemoryDumps() {
             }
             output += '0x' + addr.toString(16).padStart(4, '0').toUpperCase() + ':  ' + bytes.join('  ') + '\n';
         }
-
-    }
-
-    memBox.textContent = output;
-}
     }
 
     memBox.textContent = output;
 }
 
 function updateUI() {
-    document.getElementById('cycleCounter').textContent = 'Такты: ' + cpu.cycles;
+    const cycleElem = document.getElementById('cycleCounter');
+    if (cycleElem) cycleElem.textContent = 'Такты: ' + cpu.cycles;
+
     const statusElem = document.getElementById('compilerStatus');
     if (cpu.error) {
         statusElem.textContent = '❌ ' + cpu.error;
