@@ -55,7 +55,8 @@ const CYCLES = {
     lds: 2, sts: 2, ld: 1, st: 1, push: 2, pop: 2,
     breq: 1, brne: 1, brcs: 1, brcc: 1, brlo: 1, brsh: 1,
     brmi: 1, brpl: 1, brge: 1, brlt: 1, brhs: 1, brhc: 1, brts: 1, brtc: 1,
-    brvs: 1, brvc: 1
+    brvs: 1, brvc: 1,
+    swap: 1, movw: 1, sbr: 1, cbr: 1, cpc: 1,
 };
 
 /* ================= 2. СОСТОЯНИЕ ПРОЦЕССОРА ================= */
@@ -299,8 +300,8 @@ function savePanelOrder() {
 /* ================= 5. ДЕБАГГЕР И АНАЛИЗАТОР ОШИБОК ================= */
 
 const KNOWN_OPS = new Set([
-    'ldi','mov','add','adc','sub','subi','sbc','sbci','inc','dec','lsl','lsr','asr','rol','ror',
-    'neg','com','and','andi','or','ori','eor','tst','clr','ser','cpi','cp','cpse','sbrs','sbrc',
+    'ldi','mov','movw','add','adc','sub','subi','sbc','sbci','inc','dec','lsl','lsr','asr','rol','ror','swap',
+    'neg','com','and','andi','or','ori','eor','tst','clr','ser','cpi','cp','cpc','cpse','sbrs','sbrc','sbr','cbr',
     'sec','clc','sez','clz','sen','cln','sev','clv','ses','cls','seh','clh','set','clt',
     'bst','bld','sbi','cbi','sbis','sbic','lpm','mul','muls',
     'adiw','sbiw','st','ld','sts','lds','push','pop','jmp','rjmp','breq','brne','brcs','brcc',
@@ -1314,7 +1315,7 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        // 10. Операции с портами: |= и &= ~
+        // 10. Операции с портами: |= , &= ~ и ^= (XOR переключение светодиодов)
         const portOrMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|UCSR0B|UCSR0C|EICRA|EIMSK)\s*\|\=\s*([^;]+);/);
         if (portOrMatch) {
             const portName = portOrMatch[1];
@@ -1326,10 +1327,12 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        const portAndNotMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|UCSR0B|UCSR0C)\s*&\=\s*~\s*\(?\s*([^;]+)\)?;/);
+        const portAndNotMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|UCSR0B|UCSR0C)\s*&\=\s*~([^;]+);/);
         if (portAndNotMatch) {
             const portName = portAndNotMatch[1];
-            const mask = evaluateCExpression(applyDefines(portAndNotMatch[2].replace(/\)+$/, '')), defines) & 0xFF;
+            // Чистое вычисление выражения после тильды ~ без поломки скобок
+            const rawExpr = line.substring(line.indexOf('~') + 1, line.lastIndexOf(';')).trim();
+            const mask = evaluateCExpression(applyDefines(rawExpr), defines) & 0xFF;
             const invMask = (~mask) & 0xFF;
             const isExtended = ['UCSR0B','UCSR0C','EICRA'].includes(portName);
             asmList.push({ asm: (isExtended ? 'lds' : 'in') + ' r16, ' + portName, lineNum });
@@ -1338,6 +1341,16 @@ function compileCToAsm(cCode) {
             continue;
         }
 
+        const portXorMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD)\s*\^\=\s*([^;]+);/);
+        if (portXorMatch) {
+            const portName = portXorMatch[1];
+            const mask = evaluateCExpression(applyDefines(portXorMatch[2]), defines) & 0xFF;
+            asmList.push({ asm: 'in r16, ' + portName, lineNum });
+            asmList.push({ asm: 'ldi r17, ' + mask, lineNum });
+            asmList.push({ asm: 'eor r16, r17', lineNum });
+            asmList.push({ asm: 'out ' + portName + ', r16', lineNum });
+            continue;
+        }
         // 11. Обычные присваивания
         const assignMatch = line.match(/\b([a-zA-Z0-9_]+)\s*=\s*([^;]+);/);
         if (assignMatch) {
@@ -1497,11 +1510,17 @@ function parseVal(arg) {
 function parseReg(arg) {
     if (!arg) return 0;
     arg = arg.trim().toLowerCase();
-    const aliases = { 'xl': 26, 'xh': 27, 'yl': 28, 'yh': 29, 'zl': 30, 'zh': 31 };
+    const aliases = { 
+        'xl': 26, 'xh': 27, 'x': 26,
+        'yl': 28, 'yh': 29, 'y': 28,
+        'zl': 30, 'zh': 31, 'z': 30 
+    };
     if (aliases[arg] !== undefined) return aliases[arg];
     const clean = arg.replace(/[^0-9]/g, '');
     return Math.min(31, Math.max(0, parseInt(clean, 10) || 0));
 }
+
+
 
 function resolveIoRamAddr(token) {
     if (!token) return 0;
@@ -2320,7 +2339,94 @@ function cpuStep(silent = false) {
             cpu.sreg.C = (prev & 0x01) ? 1 : 0; cpu.sreg.Z = (res === 0) ? 1 : 0;
             cpu.sreg.N = 0; cpu.sreg.V = cpu.sreg.C; cpu.sreg.S = cpu.sreg.V; break;
         }
+         // --- ВОССТАНОВЛЕННАЯ АРИФМЕТИКА И СДВИГИ ---
 
+        case 'asr': {
+            const prev = cpu.r[inst.rd];
+            const res = (prev >> 1) | (prev & 0x80);
+            cpu.r[inst.rd] = res;
+            cpu.sreg.C = (prev & 0x01) ? 1 : 0;
+            cpu.sreg.Z = (res === 0) ? 1 : 0;
+            cpu.sreg.N = (res & 0x80) ? 1 : 0;
+            cpu.sreg.V = cpu.sreg.N ^ cpu.sreg.C;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
+            break;
+        }
+
+        case 'rol': {
+            const prev = cpu.r[inst.rd];
+            const oldC = cpu.sreg.C;
+            const res = ((prev << 1) | oldC) & 0xFF;
+            cpu.r[inst.rd] = res;
+            cpu.sreg.C = (prev & 0x80) ? 1 : 0;
+            cpu.sreg.H = (prev & 0x08) ? 1 : 0;
+            cpu.sreg.Z = (res === 0) ? 1 : 0;
+            cpu.sreg.N = (res & 0x80) ? 1 : 0;
+            cpu.sreg.V = cpu.sreg.N ^ cpu.sreg.C;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
+            break;
+        }
+
+        case 'ror': {
+            const prev = cpu.r[inst.rd];
+            const oldC = cpu.sreg.C;
+            const res = (prev >> 1) | (oldC << 7);
+            cpu.r[inst.rd] = res;
+            cpu.sreg.C = (prev & 0x01) ? 1 : 0;
+            cpu.sreg.Z = (res === 0) ? 1 : 0;
+            cpu.sreg.N = (res & 0x80) ? 1 : 0;
+            cpu.sreg.V = cpu.sreg.N ^ cpu.sreg.C;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
+            break;
+        }
+
+        case 'swap': {
+            const val = cpu.r[inst.rd];
+            cpu.r[inst.rd] = ((val & 0x0F) << 4) | ((val & 0xF0) >> 4);
+            break;
+        }
+
+        case 'movw': {
+            cpu.r[inst.rd] = cpu.r[inst.rr];
+            cpu.r[inst.rd + 1] = cpu.r[inst.rr + 1];
+            break;
+        }
+
+        case 'cpc': {
+            const res = cpu.r[inst.rd] - cpu.r[inst.rr] - cpu.sreg.C;
+            setFlagsSub(cpu.r[inst.rd], cpu.r[inst.rr], res, true);
+            break;
+        }
+
+        case 'adiw': {
+            const rLow = inst.rd;
+            const k = inst.imm;
+            const curVal = cpu.r[rLow] | (cpu.r[rLow + 1] << 8);
+            const res = curVal + k;
+            cpu.r[rLow] = res & 0xFF;
+            cpu.r[rLow + 1] = (res >> 8) & 0xFF;
+            cpu.sreg.Z = ((res & 0xFFFF) === 0) ? 1 : 0;
+            cpu.sreg.N = (res & 0x8000) ? 1 : 0;
+            cpu.sreg.V = (!((curVal >> 15) & 1) && ((res >> 15) & 1)) ? 1 : 0;
+            cpu.sreg.C = (!((res >> 15) & 1) && ((curVal >> 15) & 1)) ? 1 : 0;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
+            break;
+        }
+
+        case 'sbiw': {
+            const rLow = inst.rd;
+            const k = inst.imm;
+            const curVal = cpu.r[rLow] | (cpu.r[rLow + 1] << 8);
+            const res = curVal - k;
+            cpu.r[rLow] = res & 0xFF;
+            cpu.r[rLow + 1] = (res >> 8) & 0xFF;
+            cpu.sreg.Z = ((res & 0xFFFF) === 0) ? 1 : 0;
+            cpu.sreg.N = (res & 0x8000) ? 1 : 0;
+            cpu.sreg.V = (((curVal >> 15) & 1) && !((res >> 15) & 1)) ? 1 : 0;
+            cpu.sreg.C = (((res >> 15) & 1) && !((curVal >> 15) & 1)) ? 1 : 0;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
+            break;
+        }
         case 'cp': { setFlagsSub(cpu.r[inst.rd], cpu.r[inst.rr], cpu.r[inst.rd] - cpu.r[inst.rr]); break; }
         case 'cpi': { setFlagsSub(cpu.r[inst.rd], inst.imm, cpu.r[inst.rd] - inst.imm); break; }
         case 'cpse': {
