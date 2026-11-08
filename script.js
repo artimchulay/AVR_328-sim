@@ -311,8 +311,14 @@ const KNOWN_OPS = new Set([
 function getClosestInstruction(typo) {
     let bestMatch = '';
     let minDistance = Infinity;
+    const typoLow = typo.toLowerCase();
+    const len = typoLow.length;
+
     for (const op of KNOWN_OPS) {
-        const d = levenshteinDistance(typo.toLowerCase(), op);
+        // Если разница в длине больше 2 букв — даже не тратим процессор на расчёт!
+        if (Math.abs(len - op.length) > 2) continue;
+        
+        const d = levenshteinDistance(typoLow, op);
         if (d < minDistance) { minDistance = d; bestMatch = op; }
     }
     return minDistance <= 2 ? bestMatch : null;
@@ -898,6 +904,10 @@ const AVR_CONSTS = {
     REFS1: 7, REFS0: 6, ADLAR: 5
 };
 
+// Предварительно скомпилированный единый шаблон для всех 60 констант
+const AVR_CONSTS_KEYS = Object.keys(AVR_CONSTS).sort((a,b) => b.length - a.length);
+const AVR_CONSTS_REGEX = new RegExp('\\b(' + AVR_CONSTS_KEYS.join('|') + ')\\b', 'g');
+
 function evaluateCExpression(expr, defines) {
     if (!expr) return null;
     expr = expr.trim();
@@ -906,9 +916,8 @@ function evaluateCExpression(expr, defines) {
             expr = expr.replace(new RegExp('\\b' + k + '\\b', 'g'), v);
         }
     }
-    for (const [k, v] of Object.entries(AVR_CONSTS)) {
-        expr = expr.replace(new RegExp('\\b' + k + '\\b', 'g'), v);
-    }
+    // Быстрая замена всех констант за один проход вместо 60 циклов:
+    expr = expr.replace(AVR_CONSTS_REGEX, m => AVR_CONSTS[m]);
     expr = expr.replace(/'(.)'/g, (m, c) => c.charCodeAt(0));
     expr = expr.replace(/UL|U|L/gi, '');
     try {
@@ -3462,12 +3471,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const ghostOverlay = document.getElementById('ghostOverlay');
     const gutter = document.getElementById('lineGutter');
 
+   let inputDebounce = null;
     txtArea.addEventListener('input', () => {
-        updateSyntax();
-        updateGhostAutocomplete();
-        cpuReset();
-    });
+        clearTimeout(inputDebounce);
+        inputDebounce = setTimeout(() => {
+            const val = txtArea.value;
+            // Умное автоопределение языка: если вставили Си-код — переключаемся на Си автоматически!
+            if (val.includes('#include') || val.includes('int main') || val.includes('ISR(')) {
+                if (currentLang !== 'c') {
+                    currentLang = 'c';
+                    document.getElementById('btnLangAsm')?.classList.remove('active');
+                    document.getElementById('btnLangC')?.classList.add('active');
+                    document.getElementById('editorTitle').textContent = '⚡ Редактор (C)';
+                }
+            } else if (val.includes('.include') || val.includes('.org') || val.includes('.cseg')) {
+                if (currentLang !== 'asm') {
+                    currentLang = 'asm';
+                    document.getElementById('btnLangAsm')?.classList.add('active');
+                    document.getElementById('btnLangC')?.classList.remove('active');
+                    document.getElementById('editorTitle').textContent = '📝 Редактор (.asm)';
+                }
+            }
 
+            updateSyntax();
+            updateGhostAutocomplete();
+            cpuReset();
+        }, 120); // 120 мс задержки исключают микрофризы браузера при вставке
+    });
     txtArea.addEventListener('scroll', () => {
         highlighting.scrollTop = txtArea.scrollTop;
         highlighting.scrollLeft = txtArea.scrollLeft;
