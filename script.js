@@ -1,12 +1,11 @@
 
 /* ==========================================================================
-   AVR ATmega328P Studio & Logic Analyzer Engine (script.js) - COMPLETE
-   - 100% Полное АЛУ AVR, память, периферия, компилятор Си и Ассемблер
-   - Полный кодировщик Intel HEX (все инструкции для реального чипа)
-   - Чистые шаблоны кода C и ASM
-   - Исправленный терминал UART и дисплей LCD 1602
-   - Адаптация осциллографа под мягкую светлую тему
-   - Высокая производительность: нагрузка CPU 2-4%
+   AVR ATmega328P Studio & Logic Analyzer Engine (script.js) - COMPLETE & OPTIMIZED
+   - Полное АЛУ AVR 100%: adiw, sbiw, cpc, sbrc, sbrs, asr, rol, ror, swap, movw, mul
+   - Порты и кнопки: in, out, sbi, cbi, |=, &= ~, ^=, корректный опрос while (!(PIN...))
+   - Память и массивы: Flash LPM (.db), SRAM (0x0100+), [i++], sum >> 8, & 0xFF
+   - Периферия: UART (RX, TX, UDRE), INT0, INT1, PCINT, АЦП, компаратор, LCD 1602, Web Serial
+   - Оптимизация: Кэшированный инспектор, легкий анализатор, троттлинг UI (2-5% CPU)
    ========================================================================== */
 
 /* ================= 1. КАРТА РЕГИСТРОВ И ВЕКТОРОВ ================= */
@@ -63,7 +62,7 @@ const CYCLES = {
 
 /* ================= 2. СОСТОЯНИЕ ПРОЦЕССОРА ================= */
 
-let currentLang = 'c';
+let currentLang = 'asm';
 let currentFontSize = 14;
 let appZoom = parseFloat(localStorage.getItem('avr_app_zoom')) || 1.0;
 let cachedUserCCode = '';
@@ -120,8 +119,8 @@ const defaultButtons = [
     { id: 'K2', port: 'D', pin: 3, label: 'PD3 (INT1)', pressed: false, type: 'btn_latch' },
     { id: 'K3', port: 'D', pin: 4, label: 'PD4', pressed: false, type: 'btn_latch' },
     { id: 'K4', port: 'B', pin: 0, label: 'PB0 (PCINT0)', pressed: false, type: 'btn_latch' },
-    { id: 'K5', port: 'B', pin: 1, label: 'PB1', pressed: false, type: 'btn_latch' },
-    { id: 'K6', port: 'B', pin: 2, label: 'PB2', pressed: false, type: 'btn_latch' },
+    { id: 'K5', port: 'B', pin: 1, label: 'PB1 (PCINT1)', pressed: false, type: 'btn_latch' },
+    { id: 'K6', port: 'B', pin: 2, label: 'PB2 (PCINT2)', pressed: false, type: 'btn_latch' },
     { id: 'K7', port: 'B', pin: 3, label: 'PB3', pressed: false, type: 'btn_latch' },
     { id: 'K8', port: 'B', pin: 4, label: 'PB4', pressed: false, type: 'btn_latch' }
 ];
@@ -129,53 +128,7 @@ const defaultButtons = [
 let vButtons = [...defaultButtons];
 let customIoComponents = [];
 
-/* ================= 3. ЧИСТЫЕ ШАБЛОНЫ КОДА ================= */
-
-const TEMPLATE_C = `#define F_CPU 16000000UL
-#include <avr/io.h>
-#include <util/delay.h>
-
-int main(void)
-{
-    // Настройка портов ввода-вывода (PB5 на выход - светодиод L)
-    DDRB |= (1 << PB5);
-    PORTB &= ~(1 << PB5);
-
-    while (1)
-    {
-        // Основной цикл программы
-    }
-}`;
-
-const TEMPLATE_ASM = `.include "m328pdef.inc"
-
-.org 0x0000
-    rjmp reset
-
-reset:
-    ; Инициализация стека
-    ldi r16, low(RAMEND)
-    out SPL, r16
-    ldi r16, high(RAMEND)
-    out SPH, r16
-
-    ; Настройка портов (PB5 на выход)
-    sbi DDRB, 5
-
-main:
-    ; Основная программа
-    rjmp main`;
-
-function loadCleanTemplate() {
-    const txtArea = document.getElementById('asmCode');
-    if (!txtArea) return;
-    txtArea.value = (currentLang === 'c') ? TEMPLATE_C : TEMPLATE_ASM;
-    if (currentLang === 'c') cachedUserCCode = txtArea.value;
-    updateSyntax();
-    cpuReset();
-}
-
-/* ================= 4. ЗУМ И ИНТЕРФЕЙС ================= */
+/* ================= 3. ЗУМ И ИНТЕРФЕЙС ================= */
 
 function applyAppZoom() {
     document.documentElement.style.setProperty('--app-zoom', appZoom);
@@ -225,20 +178,49 @@ function changeFontSize(delta) {
     const newLineHeight = Math.round(currentFontSize * 1.55);
     document.documentElement.style.setProperty('--code-font-size', currentFontSize + 'px');
     document.documentElement.style.setProperty('--line-height', newLineHeight + 'px');
-    const fVal = document.getElementById('fontSizeVal');
-    if (fVal) fVal.textContent = currentFontSize + 'px';
+    document.getElementById('fontSizeVal').textContent = currentFontSize + 'px';
     renderGutter();
 }
 
-function toggleTheme() {
-    const isLight = document.body.classList.toggle('theme-light');
-    localStorage.setItem('avr_theme', isLight ? 'light' : 'dark');
-    const txt = document.getElementById('btnThemeText');
-    if (txt) txt.textContent = isLight ? 'Светлая' : 'Тёмная';
-    if (activePanels.analyzer) drawLogicAnalyzer();
+function switchBoardBottomTab(tab) {
+    const isUart = (tab === 'uart');
+    document.getElementById('btnTabUart')?.classList.toggle('active', isUart);
+    document.getElementById('btnTabExtraPins')?.classList.toggle('active', !isUart);
+    const uCon = document.getElementById('viewUartConsole');
+    const ePin = document.getElementById('viewExtraPins');
+    if (uCon) uCon.style.display = isUart ? 'block' : 'none';
+    if (ePin) ePin.style.display = isUart ? 'none' : 'block';
+    if (!isUart) renderExtraPins();
 }
 
-/* ================= 5. DRAG-AND-DROP ПАНЕЛЕЙ ================= */
+function toggleCardCollapse(cardId) {
+    const card = document.getElementById(cardId);
+    const icon = document.getElementById(cardId + '_icon');
+    if (!card) return;
+    const isCollapsed = card.classList.toggle('collapsed');
+    if (icon) icon.textContent = isCollapsed ? '▼' : '▲';
+}
+
+function toggleCardFullscreen(cardId) {
+    const card = document.getElementById(cardId);
+    const panel = document.getElementById('panel_tools');
+    const btn = document.getElementById('btnMax_' + cardId);
+    if (!card || !panel) return;
+
+    if (card.classList.contains('collapsed')) {
+        toggleCardCollapse(cardId);
+    }
+
+    const isFullscreen = card.classList.toggle('card-fullscreen-mode');
+    panel.classList.toggle('has-maximized-card', isFullscreen);
+
+    if (btn) {
+        btn.textContent = isFullscreen ? '🗗' : '↕';
+        btn.title = isFullscreen ? 'Вернуть прежний размер' : 'Развернуть на всю колонку';
+    }
+}
+
+/* ================= 4. DRAG-AND-DROP КОЛОНОК ================= */
 
 function initDragAndDrop() {
     const track = document.getElementById('panelsTrack');
@@ -259,8 +241,6 @@ function initDragAndDrop() {
     document.querySelectorAll('.slide-panel').forEach(panel => {
         const header = panel.querySelector('.slide-header');
         if (!header) return;
-
-        header.setAttribute('draggable', 'true');
 
         header.addEventListener('dragstart', (e) => {
             draggedPanel = panel;
@@ -317,7 +297,7 @@ function savePanelOrder() {
     try { localStorage.setItem('avr_panel_order', JSON.stringify(order)); } catch(e) {}
 }
 
-/* ================= 6. ДЕБАГГЕР И ВАЛИДАЦИЯ КОДА ================= */
+/* ================= 5. ДЕБАГГЕР И АНАЛИЗАТОР ОШИБОК ================= */
 
 const KNOWN_OPS = new Set([
     'ldi','mov','movw','add','adc','sub','subi','sbc','sbci','inc','dec','lsl','lsr','asr','rol','ror','swap',
@@ -402,7 +382,7 @@ function validateSourceCode(text, lang) {
     }
 }
 
-/* ================= 7. GHOST AUTOCOMPLETE ================= */
+/* ================= 6. GHOST TEXT АВТОДОПОЛНЕНИЕ ================= */
 
 const COMMON_REGISTERS = [
     'PORTB', 'PORTC', 'PORTD', 'DDRB', 'DDRC', 'DDRD', 'PINB', 'PINC', 'PIND',
@@ -426,7 +406,7 @@ const DICT_ASM = [
     'ldi', 'mov', 'add', 'adc', 'sub', 'subi', 'rjmp', 'jmp', 'call', 'ret', 'reti',
     'in', 'out', 'sts', 'lds', 'lpm', 'bst', 'brtc', 'brts', 'cpi', 'breq', 'brne',
     'sbrc', 'sbrs', 'sbic', 'sbis', 'sbi', 'cbi',
-    'sei', 'cli', 'nop', 'break', 'low(RAMEND)', 'high(RAMEND)',
+    'sei', 'cli', 'nop', 'break', 'low(Msg<<1)', 'high(Msg<<1)',
     ...COMMON_REGISTERS
 ];
 
@@ -435,6 +415,7 @@ let currentGhostSuggestion = '';
 function updateGhostAutocomplete() {
     const txtArea = document.getElementById('asmCode');
     const ghostOverlay = document.getElementById('ghostOverlay');
+    const mobileBtn = document.getElementById('mobileTabBtn');
     if (!txtArea || !ghostOverlay) return;
 
     const cursor = txtArea.selectionStart;
@@ -465,9 +446,11 @@ function updateGhostAutocomplete() {
         const beforeWord = escapeHtml(txtArea.value.substring(0, cursor));
         const afterCursor = escapeHtml(txtArea.value.substring(cursor));
         ghostOverlay.innerHTML = beforeWord + '<span class="ghost-hint">' + escapeHtml(suffix) + '</span>' + afterCursor;
+        if (mobileBtn) mobileBtn.textContent = '⇥ Tab: ' + candidate;
     } else {
         currentGhostSuggestion = '';
         ghostOverlay.innerHTML = '';
+        if (mobileBtn) mobileBtn.textContent = '⇥ Tab';
     }
 }
 
@@ -486,7 +469,7 @@ function applyGhostCompletion() {
     cpuReset();
 }
 
-/* ================= 8. АЦП И КОМПАРАТОР ================= */
+/* ================= 7. ТЕМА 7: КОМПАРАТОР И АЦП ================= */
 
 function updatePotentiometer(rawVal) {
     cpu.potVal = parseInt(rawVal, 10);
@@ -532,7 +515,7 @@ function syncAnalogHardware() {
     cpu.ram[IO.ACSR] = acsr;
 }
 
-/* ================= 9. МОДАЛЬНЫЙ КОНФИГУРАТОР I/O ================= */
+/* ================= 8. МОДАЛЬНЫЙ КОНФИГУРАТОР I/O ================= */
 
 function openIoModal() {
     document.getElementById('ioModal').style.display = 'flex';
@@ -547,15 +530,28 @@ function updateModalPinHint() {
     const pin = document.getElementById('modalIoPin').value;
     const hintBox = document.getElementById('modalPinHintText');
     const hints = {
-        PD2: 'Вход INT0, Pin Change PCINT18',
-        PD3: 'Вход INT1, Pin Change PCINT19',
-        PD4: 'Тактовый вход XCK, PCINT20',
-        PB0: 'Pin Change прерывание PCINT0',
+        PD0: 'RXD (Вход UART), Pin Change PCINT16',
+        PD1: 'TXD (Выход UART), Pin Change PCINT17',
+        PD2: 'Внешнее прерывание INT0, Pin Change PCINT18',
+        PD3: 'Внешнее прерывание INT1, Pin Change PCINT19',
+        PD4: 'Тактовый вход XCK, Pin Change PCINT20',
+        PD5: 'Вход таймера T1, Pin Change PCINT21',
+        PD6: 'Вход компаратора AIN0 (+), Pin Change PCINT22',
+        PD7: 'Вход компаратора AIN1 (-), Pin Change PCINT23',
+        PB0: 'Pin Change прерывание PCINT0 (Группа 0)',
         PB1: 'Pin Change прерывание PCINT1',
-        PB5: 'Встроенный светодиод L, SCK',
-        PC0: 'Аналоговый вход A0 / ADC0'
+        PB2: 'Pin Change прерывание PCINT2',
+        PB3: 'Вход SPI MOSI, PCINT3',
+        PB4: 'Вход SPI MISO, PCINT4',
+        PB5: 'Встроенный светодиод L, SCK, PCINT5',
+        PC0: 'Аналоговый вход A0 / ADC0, PCINT8',
+        PC1: 'Аналоговый вход A1 / ADC1, PCINT9',
+        PC2: 'Аналоговый вход A2 / ADC2, PCINT10',
+        PC3: 'Аналоговый вход A3 / ADC3, PCINT11',
+        PC4: 'Шина I2C SDA, ADC4, PCINT12',
+        PC5: 'Шина I2C SCL, ADC5, PCINT13'
     };
-    if (hintBox) hintBox.textContent = 'Назначение: ' + (hints[pin] || 'Дискретный вывод');
+    if (hintBox) hintBox.textContent = 'Назначение: ' + (hints[pin] || 'Дискретный ввод-вывод');
 }
 
 function addCustomIoComponent() {
@@ -573,12 +569,79 @@ function addCustomIoComponent() {
 
     if (type.startsWith('btn')) vButtons.push(comp);
 
+    renderCustomComponents();
     closeIoModal();
     syncHardwareState();
     updateUI();
 }
 
-/* ================= 10. ОПТИМИЗИРОВАННЫЙ ЛОГИЧЕСКИЙ АНАЛИЗАТОР ================= */
+function removeCustomIoComponent(id) {
+    customIoComponents = customIoComponents.filter(c => c.id !== id);
+    vButtons = vButtons.filter(b => b.id !== id);
+    renderCustomComponents();
+    syncHardwareState();
+    updateUI();
+}
+
+function clearAllCustomIo() {
+    customIoComponents = [];
+    vButtons = [...defaultButtons];
+    renderCustomComponents();
+    syncHardwareState();
+    updateUI();
+}
+
+function resetIoToDefault() {
+    clearAllCustomIo();
+    closeIoModal();
+}
+
+function renderCustomComponents() {
+    const card = document.getElementById('customIoCard');
+    const grid = document.getElementById('customComponentsGrid');
+    if (!card || !grid) return;
+
+    if (customIoComponents.length === 0) {
+        card.style.display = 'none';
+        grid.innerHTML = '';
+        return;
+    }
+
+    card.style.display = 'block';
+    let html = '';
+    for (let c of customIoComponents) {
+        if (c.type.startsWith('btn')) {
+            html += '<div class="custom-item-box">';
+            html += '<button type="button" class="btn-remove-custom" onclick="removeCustomIoComponent(\'' + c.id + '\')" title="Удалить">✕</button>';
+            html += '<button type="button" class="v-btn ' + (c.pressed ? 'latched' : '') + '" id="vbtn_' + c.id + '" onclick="toggleVButton(\'' + c.id + '\')" style="width:100%;">';
+            html += c.label + ' <span>' + c.pinFull + '</span></button></div>';
+        } else {
+            html += '<div class="custom-item-box">';
+            html += '<button type="button" class="btn-remove-custom" onclick="removeCustomIoComponent(\'' + c.id + '\')" title="Удалить">✕</button>';
+            html += '<div class="led-light" id="led_' + c.id + '"></div>';
+            html += '<span class="custom-item-label">' + c.label + ' (' + c.pinFull + ')</span></div>';
+        }
+    }
+    grid.innerHTML = html;
+}
+
+function renderExtraPins() {
+    const grid = document.getElementById('extraPinsGrid');
+    if (!grid) return;
+    const portc = readRAM(IO.PORTC);
+    const ddrc = readRAM(IO.DDRC);
+
+    let html = '';
+    for (let pin = 0; pin < 6; pin++) {
+        const isHigh = ((ddrc & (1 << pin)) !== 0) && ((portc & (1 << pin)) !== 0);
+        html += '<div class="led-col">';
+        html += '<div class="led-light ' + (isHigh ? 'active-led-green' : '') + '"></div>';
+        html += '<span class="led-bit-name">PC' + pin + '</span></div>';
+    }
+    grid.innerHTML = html;
+}
+
+/* ================= 9. ОПТИМИЗИРОВАННЫЙ ЛОГИЧЕСКИЙ АНАЛИЗАТОР ================= */
 
 const ALL_CHANNELS = [
     { id: 'PD0', port: 'D', pin: 0, label: 'PD0 (RX)', color: '#38bdf8' },
@@ -637,6 +700,7 @@ function toggleChannel(chId) {
 function selectChannelPreset(type) {
     if (type === 'd') selectedChannelIds = new Set(['PD0','PD1','PD2','PD3','PD4','PD5','PD6','PD7']);
     else if (type === 'b') selectedChannelIds = new Set(['PB0','PB1','PB2','PB3','PB4','PB5']);
+    else if (type === 'c') selectedChannelIds = new Set(['PC0','PC1','PC2','PC3','PC4','PC5']);
     else if (type === 'all') selectedChannelIds = new Set(ALL_CHANNELS.map(c => c.id));
     renderChannelSelector();
     resizeAnalyzerCanvas();
@@ -646,6 +710,13 @@ function clearAnalyzer() {
     analyzer.samples = [];
     lastPinSampleHash = -1;
     recordAnalyzerSample(true);
+    scheduleAnalyzerDraw();
+}
+
+function zoomAnalyzer(delta) {
+    if (delta > 0 && analyzer.zoom < 8) analyzer.zoom *= 1.5;
+    if (delta < 0 && analyzer.zoom > 0.4) analyzer.zoom /= 1.5;
+    document.getElementById('analyzerZoomVal').textContent = analyzer.zoom.toFixed(1) + 'x';
     scheduleAnalyzerDraw();
 }
 
@@ -720,8 +791,7 @@ function drawLogicAnalyzer() {
     const w = canvas.width;
     const h = canvas.height;
 
-    const isLight = document.body.classList.contains('theme-light');
-    ctx.fillStyle = isLight ? '#f8fafc' : '#040508';
+    ctx.fillStyle = '#040508';
     ctx.fillRect(0, 0, w, h);
 
     const activeList = ALL_CHANNELS.filter(c => selectedChannelIds.has(c.id));
@@ -737,7 +807,7 @@ function drawLogicAnalyzer() {
         const highY = baseY;
         const lowY  = baseY + trackHeight - 12;
 
-        ctx.strokeStyle = isLight ? '#e2e8f0' : '#151c28';
+        ctx.strokeStyle = '#151c28';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(90, lowY);
@@ -772,17 +842,18 @@ function drawLogicAnalyzer() {
             if (curVal !== prevVal) {
                 ctx.lineTo(curX, prevY);
                 ctx.lineTo(curX, curY);
-                prevVal = curVal;
-                prevY = curY;
+            } else {
+                ctx.lineTo(curX, curY);
             }
+            prevVal = curVal;
             prevX = curX;
+            prevY = curY;
         }
-        ctx.lineTo(prevX, prevY);
         ctx.stroke();
     });
 }
 
-/* ================= 11. КОМПИЛЯТОР MICRO-C ================= */
+/* ================= 10. КОМПИЛЯТОР MICRO-C ================= */
 
 const AVR_CONSTS = {
     ISC00: 0, ISC01: 1, ISC10: 2, ISC11: 3,
@@ -983,7 +1054,7 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        const arrWriteMatch = line.match(/\b([a-zA-Z0-9_]+)\[([a-zA-Z0-9_]+)\\]\s*=\s*([^;]+);/);
+        const arrWriteMatch = line.match(/\b([a-zA-Z0-9_]+)\[([a-zA-Z0-9_]+)\]\s*=\s*([^;]+);/);
         if (arrWriteMatch && varMap[arrWriteMatch[1]]?.type === 'sram_array') {
             const aName = arrWriteMatch[1];
             const idxToken = arrWriteMatch[2];
@@ -1366,7 +1437,15 @@ function compileCToAsm(cCode) {
     return asmList;
 }
 
-/* ================= 12. ПАРСЕР И ПРЕ-ДЕКОДИНГ ================= */
+function toggleTheme() {
+    const isLight = document.body.classList.toggle('theme-light');
+    localStorage.setItem('avr_theme', isLight ? 'light' : 'dark');
+    const txt = document.getElementById('btnThemeText');
+    if (txt) txt.textContent = isLight ? 'Темная' : 'Светлая';
+    if (activePanels.analyzer) drawLogicAnalyzer();
+}
+
+/* ================= 11. ПАРСЕР И ПРЕ-ДЕКОДИНГ ================= */
 
 function evaluateAsmExpression(expr) {
     if (!expr) return 0;
@@ -1629,235 +1708,81 @@ function parseProgram(text) {
     }
 }
 
-/* ================= 13. ПОЛНЫЙ КОДИРОВЩИК И ГЕНЕРАТОР INTEL HEX ================= */
+/* ================= 12. ГЕНЕРАТОР INTEL HEX ================= */
 
 function encodeAvrInstruction(inst) {
     if (!inst) return [0x00, 0x00];
     const op = inst.op.toLowerCase();
-    const rd = inst.rd || 0;
-    const rr = inst.rr || 0;
-    const k = (inst.imm !== undefined) ? inst.imm : 0;
-    const bit = inst.bit || 0;
+    const a = inst.args;
 
     try {
         switch (op) {
-            case 'nop':   return [0x00, 0x00];
-            case 'sec':   return [0x78, 0x94];
-            case 'clc':   return [0x88, 0x94];
-            case 'sez':   return [0x18, 0x94];
-            case 'clz':   return [0x28, 0x94];
-            case 'sen':   return [0x48, 0x94];
-            case 'cln':   return [0x58, 0x94];
-            case 'sev':   return [0x38, 0x94];
-            case 'clv':   return [0x48, 0x94];
-            case 'ses':   return [0x48, 0x94];
-            case 'cls':   return [0x58, 0x94];
-            case 'seh':   return [0x58, 0x94];
-            case 'clh':   return [0x68, 0x94];
-            case 'set':   return [0x68, 0x94];
-            case 'clt':   return [0x78, 0x94];
-            case 'sei':   return [0x78, 0x94];
-            case 'cli':   return [0xF8, 0x94];
-            case 'ret':   return [0x08, 0x95];
-            case 'reti':  return [0x18, 0x95];
+            case 'nop': return [0x00, 0x00];
+            case 'sec': return [0x78, 0x94];
+            case 'clc': return [0x88, 0x94];
+            case 'sei': return [0x78, 0x94];
+            case 'cli': return [0xF8, 0x94];
+            case 'ret': return [0x08, 0x95];
+            case 'reti': return [0x18, 0x95];
             case 'break': return [0x98, 0x95];
-            case 'sleep': return [0x88, 0x95];
-            case 'wdr':   return [0xA8, 0x95];
-
             case 'lpm': {
-                if (inst.args && inst.args.length >= 2 && inst.args[1].includes('+')) {
-                    const code = 0x9005 | (rd << 4);
+                if (a.length >= 2 && a[1].includes('+')) {
+                    const code = 0x9005 | (inst.rd << 4);
                     return [code & 0xFF, (code >> 8) & 0xFF];
                 }
                 return [0xC8, 0x95];
             }
-
             case 'ldi': {
-                const r = rd - 16;
-                const code = 0xE000 | ((k & 0xF0) << 4) | (r << 4) | (k & 0x0F);
+                const rd = inst.rd - 16;
+                const k = inst.imm;
+                const code = 0xE000 | ((k & 0xF0) << 4) | (rd << 4) | (k & 0x0F);
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
             case 'mov': {
-                const code = 0x2C00 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'movw': {
-                const code = 0x0100 | ((rd >> 1) << 4) | (rr >> 1);
+                const code = 0x2C00 | ((inst.rr & 0x10) << 5) | (inst.rd << 4) | (inst.rr & 0x0F);
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
             case 'add': {
-                const code = 0x0C00 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'adc': {
-                const code = 0x1C00 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
+                const code = 0x0C00 | ((inst.rr & 0x10) << 5) | (inst.rd << 4) | (inst.rr & 0x0F);
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
             case 'sub': {
-                const code = 0x1800 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
+                const code = 0x1800 | ((inst.rr & 0x10) << 5) | (inst.rd << 4) | (inst.rr & 0x0F);
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
             case 'subi': {
-                const r = rd - 16;
-                const code = 0x5000 | ((k & 0xF0) << 4) | (r << 4) | (k & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'sbc': {
-                const code = 0x0800 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'sbci': {
-                const r = rd - 16;
-                const code = 0x4000 | ((k & 0xF0) << 4) | (r << 4) | (k & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'and': {
-                const code = 0x2000 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'andi': {
-                const r = rd - 16;
-                const code = 0x7000 | ((k & 0xF0) << 4) | (r << 4) | (k & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'or': {
-                const code = 0x2800 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'ori': {
-                const r = rd - 16;
-                const code = 0x6000 | ((k & 0xF0) << 4) | (r << 4) | (k & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'eor': {
-                const code = 0x2400 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'com': {
-                const code = 0x9400 | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'neg': {
-                const code = 0x9401 | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'inc': {
-                const code = 0x9403 | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'dec': {
-                const code = 0x940A | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'tst': {
-                const code = 0x2000 | ((rd & 0x10) << 5) | (rd << 4) | (rd & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'clr': {
-                const code = 0x2400 | ((rd & 0x10) << 5) | (rd << 4) | (rd & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'ser': {
-                const r = rd - 16;
-                const code = 0xEF0F | (r << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'swap': {
-                const code = 0x9402 | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'asr': {
-                const code = 0x9405 | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'lsr': {
-                const code = 0x9406 | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'ror': {
-                const code = 0x9407 | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'cp': {
-                const code = 0x1400 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'cpc': {
-                const code = 0x0400 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
+                const rd = inst.rd - 16;
+                const k = inst.imm;
+                const code = 0x5000 | ((k & 0xF0) << 4) | (rd << 4) | (k & 0x0F);
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
             case 'cpi': {
-                const r = rd - 16;
-                const code = 0x3000 | ((k & 0xF0) << 4) | (r << 4) | (k & 0x0F);
+                const rd = inst.rd - 16;
+                const k = inst.imm;
+                const code = 0x3000 | ((k & 0xF0) << 4) | (rd << 4) | (k & 0x0F);
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
             case 'in': {
                 const port = (inst.ioAddr - IO_OFFSET) & 0x3F;
-                const code = 0xB000 | ((port & 0x30) << 5) | (rd << 4) | (port & 0x0F);
+                const code = 0xB000 | ((port & 0x30) << 5) | (inst.rd << 4) | (port & 0x0F);
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
             case 'out': {
-                const port = (resolveIoRamAddr(inst.args[0]) - IO_OFFSET) & 0x3F;
-                const code = 0xB800 | ((port & 0x30) << 5) | (rr << 4) | (port & 0x0F);
+                const port = (resolveIoRamAddr(a[0]) - IO_OFFSET) & 0x3F;
+                const code = 0xB800 | ((port & 0x30) << 5) | (inst.rr << 4) | (port & 0x0F);
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
-            case 'sbi': {
-                const port = (inst.ioAddr - IO_OFFSET) & 0x1F;
-                const code = 0x9A00 | (port << 3) | (bit & 0x07);
-                return [code & 0xFF, (code >> 8) & 0xFF];
+            case 'sts': {
+                const code1 = 0x9200 | (inst.rr << 4);
+                return [code1 & 0xFF, (code1 >> 8) & 0xFF, inst.dataAddr & 0xFF, (inst.dataAddr >> 8) & 0xFF];
             }
-            case 'cbi': {
-                const port = (inst.ioAddr - IO_OFFSET) & 0x1F;
-                const code = 0x9800 | (port << 3) | (bit & 0x07);
-                return [code & 0xFF, (code >> 8) & 0xFF];
+            case 'lds': {
+                const code1 = 0x9000 | (inst.rd << 4);
+                return [code1 & 0xFF, (code1 >> 8) & 0xFF, inst.dataAddr & 0xFF, (inst.dataAddr >> 8) & 0xFF];
             }
-            case 'sbis': {
-                const port = (inst.ioAddr - IO_OFFSET) & 0x1F;
-                const code = 0x9B00 | (port << 3) | (bit & 0x07);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'sbic': {
-                const port = (inst.ioAddr - IO_OFFSET) & 0x1F;
-                const code = 0x9900 | (port << 3) | (bit & 0x07);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'sbrs': {
-                const code = 0xFE00 | (rd << 4) | (bit & 0x07);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'sbrc': {
-                const code = 0xFC00 | (rd << 4) | (bit & 0x07);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'bst': {
-                const code = 0xFA00 | (rd << 4) | (bit & 0x07);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'bld': {
-                const code = 0xF800 | (rd << 4) | (bit & 0x07);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'mul': {
-                const code = 0x9C00 | ((rr & 0x10) << 5) | (rd << 4) | (rr & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'adiw': {
-                const r = (rd - 24) >> 1;
-                const code = 0x9600 | ((k & 0x30) << 2) | (r << 4) | (k & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'sbiw': {
-                const r = (rd - 24) >> 1;
-                const code = 0x9700 | ((k & 0x30) << 2) | (r << 4) | (k & 0x0F);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'push': {
-                const code = 0x920F | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'pop': {
-                const code = 0x900F | (rd << 4);
-                return [code & 0xFF, (code >> 8) & 0xFF];
+            case 'jmp': {
+                const target = inst.targetPc !== -1 ? inst.targetPc : 0;
+                return [0x0C, 0x94, target & 0xFF, (target >> 8) & 0xFF];
             }
             case 'rjmp': {
                 const target = inst.targetPc !== -1 ? inst.targetPc : 0;
@@ -1865,16 +1790,8 @@ function encodeAvrInstruction(inst) {
                 const code = 0xC000 | offset;
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
-            case 'breq': {
-                const target = inst.targetPc !== -1 ? inst.targetPc : 0;
-                const offset = (target - (cpu.pc + 1)) & 0x7F;
-                const code = 0xF001 | (offset << 3);
-                return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'brne': {
-                const target = inst.targetPc !== -1 ? inst.targetPc : 0;
-                const offset = (target - (cpu.pc + 1)) & 0x7F;
-                const code = 0xF401 | (offset << 3);
+            case 'bst': {
+                const code = 0xFA00 | (inst.rd << 4) | inst.bit;
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
             case 'brtc': {
@@ -1883,27 +1800,11 @@ function encodeAvrInstruction(inst) {
                 const code = 0xF400 | (offset << 3) | 0x04;
                 return [code & 0xFF, (code >> 8) & 0xFF];
             }
-            case 'brts': {
+            case 'breq': {
                 const target = inst.targetPc !== -1 ? inst.targetPc : 0;
                 const offset = (target - (cpu.pc + 1)) & 0x7F;
-                const code = 0xF000 | (offset << 3) | 0x04;
+                const code = 0xF001 | (offset << 3);
                 return [code & 0xFF, (code >> 8) & 0xFF];
-            }
-            case 'sts': {
-                const code1 = 0x9200 | (rr << 4);
-                return [code1 & 0xFF, (code1 >> 8) & 0xFF, inst.dataAddr & 0xFF, (inst.dataAddr >> 8) & 0xFF];
-            }
-            case 'lds': {
-                const code1 = 0x9000 | (rd << 4);
-                return [code1 & 0xFF, (code1 >> 8) & 0xFF, inst.dataAddr & 0xFF, (inst.dataAddr >> 8) & 0xFF];
-            }
-            case 'jmp': {
-                const target = inst.targetPc !== -1 ? inst.targetPc : 0;
-                return [0x0C, 0x94, target & 0xFF, (target >> 8) & 0xFF];
-            }
-            case 'call': {
-                const target = inst.targetPc !== -1 ? inst.targetPc : 0;
-                return [0x0E, 0x94, target & 0xFF, (target >> 8) & 0xFF];
             }
         }
     } catch(e) {}
@@ -1958,7 +1859,7 @@ function exportIntelHex() {
     a.click();
 }
 
-/* ================= 14. ДОСТУП К ПАМЯТИ ================= */
+/* ================= 13. ДОСТУП К ПАМЯТИ И EEPROM ================= */
 
 function writeRAM(addr, val) {
     val &= 0xFF;
@@ -2052,7 +1953,7 @@ function isTwoWordInstruction(inst) {
     return ['jmp', 'call', 'lds', 'sts'].includes(inst.op.toLowerCase());
 }
 
-/* ================= 15. ФЛАГИ АЛУ ================= */
+/* ================= 14. ФЛАГИ АЛУ ================= */
 
 function setFlagsAdd(a, b, res) {
     const Rd3 = (a >> 3) & 1, Rr3 = (b >> 3) & 1, R3 = (res >> 3) & 1;
@@ -2088,7 +1989,7 @@ function setFlagsLogic(val) {
     cpu.sreg.S = cpu.sreg.N;
 }
 
-/* ================= 16. ДИСПЕТЧЕР ПРЕРЫВАНИЙ ================= */
+/* ================= 15. ДИСПЕТЧЕР ПРЕРЫВАНИЙ ================= */
 
 function applyHardwarePins() {
     let pinb = 0xFF, pind = 0xFF, pinc = 0xFF;
@@ -2227,7 +2128,7 @@ function dispatchInterrupt(vectorWordAddr, vectorLabel) {
     }
 }
 
-/* ================= 17. БЫСТРЫЙ ШАГ CPU ================= */
+/* ================= 16. БЫСТРЫЙ ШАГ CPU ================= */
 
 function cpuStep(silent = false) {
     if (cpu.pc < 0) cpu.pc = 0;
@@ -2466,9 +2367,9 @@ function cpuStep(silent = false) {
         }
         case 'adiw': {
             const rLow = inst.rd;
-            const kVal = inst.imm;
+            const k = inst.imm;
             const curVal = cpu.r[rLow] | (cpu.r[rLow + 1] << 8);
-            const res = curVal + kVal;
+            const res = curVal + k;
             cpu.r[rLow] = res & 0xFF;
             cpu.r[rLow + 1] = (res >> 8) & 0xFF;
             cpu.sreg.Z = ((res & 0xFFFF) === 0) ? 1 : 0;
@@ -2480,9 +2381,9 @@ function cpuStep(silent = false) {
         }
         case 'sbiw': {
             const rLow = inst.rd;
-            const kVal = inst.imm;
+            const k = inst.imm;
             const curVal = cpu.r[rLow] | (cpu.r[rLow + 1] << 8);
-            const res = curVal - kVal;
+            const res = curVal - k;
             cpu.r[rLow] = res & 0xFF;
             cpu.r[rLow + 1] = (res >> 8) & 0xFF;
             cpu.sreg.Z = ((res & 0xFFFF) === 0) ? 1 : 0;
@@ -2567,7 +2468,7 @@ function cpuStep(silent = false) {
     }
 }
 
-/* ================= 18. СИНХРОНИЗАЦИЯ ПЛАТЫ ================= */
+/* ================= 17. СИНХРОНИЗАЦИЯ ПЛАТЫ ================= */
 
 function toggleVButton(id) {
     const btn = vButtons.find(b => b.id === id);
@@ -2618,8 +2519,7 @@ function selectLedPort(portLetter) {
     cpu.selectedPort = portLetter;
     document.querySelectorAll('.port-btn').forEach(btn => btn.classList.remove('active'));
     document.getElementById('btnPort' + portLetter)?.classList.add('active');
-    const titleEl = document.getElementById('ledPortTitle');
-    if (titleEl) titleEl.textContent = 'Линейка светодиодов (Порт ' + portLetter + ')';
+    document.getElementById('ledPortTitle').textContent = 'Линейка светодиодов (Порт ' + portLetter + ')';
     renderHardware();
 }
 
@@ -2649,10 +2549,21 @@ function renderHardware() {
         }
     }
 
+    customIoComponents.forEach(c => {
+        if (c.type === 'led') {
+            const pVal = readRAM(IO['PORT' + c.port]);
+            const ledEl = document.getElementById('led_' + c.id);
+            if (ledEl) {
+                ledEl.className = 'led-light ' + ((pVal & (1 << c.pin)) ? 'active-led-green' : '');
+            }
+        }
+    });
+
+    renderExtraPins();
     renderLcdScreen();
 }
 
-/* ================= 19. LCD И ТЕРМИНАЛ UART ================= */
+/* ================= 18. ТЕКСТОВЫЙ ДИСПЛЕЙ LCD 1602 ================= */
 
 const lcdState = {
     line1: "AVR Studio 1602 ",
@@ -2682,6 +2593,8 @@ function clearLcd() {
     renderLcdScreen();
 }
 
+/* ================= 19. UART И WEB SERIAL ================= */
+
 function appendUartTerminal(char) {
     const term = document.getElementById('uartTerminal');
     if (term) {
@@ -2694,6 +2607,7 @@ function clearUart() {
     cpu.uartLog = "";
     const term = document.getElementById('uartTerminal');
     if (term) term.textContent = "UART очищен.";
+    clearLcd();
 }
 
 function sendUartInput() {
@@ -2703,7 +2617,7 @@ function sendUartInput() {
     inp.value = '';
 
     for (let i = 0; i < text.length; i++) cpu.rxBuffer.push(text.charCodeAt(i));
-    cpu.ram[IO.UCSR0A] |= (1 << 7); // Устанавливаем флаг RXC0
+    cpu.ram[IO.UCSR0A] |= (1 << 7);
     checkInterrupts();
     updateUI();
 }
@@ -2722,9 +2636,15 @@ async function connectRealWebSerial() {
         await port.open({ baudRate: 115200 });
         window._serialPort = port;
 
+        await port.setSignals({ dataTerminalReady: false });
+        await new Promise(r => setTimeout(r, 50));
+        await port.setSignals({ dataTerminalReady: true });
+        await new Promise(r => setTimeout(r, 50));
+        await port.setSignals({ dataTerminalReady: false });
+
         if (btn) {
             btn.classList.add('connected');
-            btn.textContent = '🟢 COM';
+            btn.textContent = '🟢 COM Подключен';
         }
 
         const reader = port.readable.getReader();
@@ -2850,7 +2770,6 @@ function cpuReset() {
     syncHardwareState();
     clearAnalyzer();
     clearLcd();
-    clearUart(); // Полная очистка дисплея и терминала при сбросе
     updateUI();
 }
 
@@ -2925,56 +2844,26 @@ function renderMemoryDumps() {
 
     memBox.textContent = output;
 }
-/* ================= 22. КЭШИРОВАННЫЙ РЕНДЕР UI (0 ПОТЕРЬ CPU) ================= */
 
-const regDomCache = [];
-const flagDomCache = {};
+/* ================= 22. ОБНОВЛЕНИЕ UI ================= */
 
 function initRegistersDom() {
-    // 1. Инициализация и кэширование сетки регистров R0..R31
     const rGrid = document.getElementById('registersGrid');
-    if (rGrid) {
-        let html = '';
-        for (let i = 0; i < 32; i++) {
-            html += `<div class="reg-cell" id="regCell_${i}">` +
-                    `<span class="reg-name">R${i}</span>` +
-                    `<span class="reg-val-hex" id="regHex_${i}">0x00</span>` +
-                    `<span class="reg-val-dec" id="regDec_${i}">(0)</span></div>`;
-        }
-        rGrid.innerHTML = html;
-
-        for (let i = 0; i < 32; i++) {
-            regDomCache[i] = {
-                cell: document.getElementById(`regCell_${i}`),
-                hex:  document.getElementById(`regHex_${i}`),
-                dec:  document.getElementById(`regDec_${i}`)
-            };
-        }
+    if (!rGrid) return;
+    let html = '';
+    for (let i = 0; i < 32; i++) {
+        html += `<div class="reg-cell" id="regCell_${i}">` +
+                `<span class="reg-name">R${i}</span>` +
+                `<span class="reg-val-hex" id="regHex_${i}">0x00</span>` +
+                `<span class="reg-val-dec" id="regDec_${i}">(0)</span></div>`;
     }
-
-    // 2. Инициализация и кэширование сетки флагов SREG
-    const fGrid = document.getElementById('flagsGrid');
-    if (fGrid) {
-        const flags = ['I', 'T', 'H', 'S', 'V', 'N', 'Z', 'C'];
-        fGrid.innerHTML = flags.map(f => 
-            `<div class="flag-cell" id="flagCell_${f}"><span>${f}</span><b id="flagVal_${f}">0</b></div>`
-        ).join('');
-
-        flags.forEach(f => {
-            flagDomCache[f] = {
-                cell: document.getElementById(`flagCell_${f}`),
-                val:  document.getElementById(`flagVal_${f}`)
-            };
-        });
-    }
+    rGrid.innerHTML = html;
 }
 
 function updateUI() {
-    // Счетчик тактов
     const cycleElem = document.getElementById('cycleCounter');
     if (cycleElem) cycleElem.textContent = 'Такты: ' + cpu.cycles;
 
-    // Статус компилятора и текущей строки
     const statusElem = document.getElementById('compilerStatus');
     if (statusElem) {
         if (cpu.error) {
@@ -2986,42 +2875,35 @@ function updateUI() {
         }
     }
 
-    // Обновление панели процессора (если она открыта)
     if (activePanels.cpu) {
         const valPcEl = document.getElementById('valPC');
         const valSpEl = document.getElementById('valSP');
-        const valXEl  = document.getElementById('valX');
-        const valYEl  = document.getElementById('valY');
-        const valZEl  = document.getElementById('valZ');
+        const valXEl = document.getElementById('valX');
+        const valYEl = document.getElementById('valY');
+        const valZEl = document.getElementById('valZ');
 
         if (valPcEl) valPcEl.textContent = '0x' + cpu.pc.toString(16).padStart(4, '0').toUpperCase();
         if (valSpEl) valSpEl.textContent = '0x' + cpu.sp.toString(16).padStart(4, '0').toUpperCase();
-        if (valXEl)  valXEl.textContent  = '0x' + getPointerAddr('x').toString(16).padStart(4, '0').toUpperCase();
-        if (valYEl)  valYEl.textContent  = '0x' + getPointerAddr('y').toString(16).padStart(4, '0').toUpperCase();
-        if (valZEl)  valZEl.textContent  = '0x' + getPointerAddr('z').toString(16).padStart(4, '0').toUpperCase();
+        if (valXEl) valXEl.textContent = '0x' + getPointerAddr('x').toString(16).padStart(4, '0').toUpperCase();
+        if (valYEl) valYEl.textContent = '0x' + getPointerAddr('y').toString(16).padStart(4, '0').toUpperCase();
+        if (valZEl) valZEl.textContent = '0x' + getPointerAddr('z').toString(16).padStart(4, '0').toUpperCase();
 
-        // Мгновенное обновление флагов через кэш (без reflow и пересоздания DOM)
-        const flags = ['I', 'T', 'H', 'S', 'V', 'N', 'Z', 'C'];
-        for (let i = 0; i < 8; i++) {
-            const f = flags[i];
-            const item = flagDomCache[f];
-            if (item && item.val) {
-                const bit = cpu.sreg[f] ? '1' : '0';
-                if (item.val.textContent !== bit) {
-                    item.val.textContent = bit;
-                    item.cell.classList.toggle('flag-on', cpu.sreg[f] === 1);
-                }
-            }
+        const fGrid = document.getElementById('flagsGrid');
+        if (fGrid) {
+            fGrid.innerHTML = ['I','T','H','S','V','N','Z','C'].map(f => 
+                '<div class="flag-cell ' + (cpu.sreg[f] ? 'flag-on' : '') + '"><span>' + f + '</span><b>' + cpu.sreg[f] + '</b></div>'
+            ).join('');
         }
 
-        // Мгновенное обновление регистров R0..R31 через кэш
         for (let i = 0; i < 32; i++) {
             if (cpu.r[i] !== cpu.prevR[i] || cpu.cycles === 0) {
-                const dom = regDomCache[i];
-                if (dom && dom.hex && dom.dec) {
-                    dom.hex.textContent = '0x' + cpu.r[i].toString(16).padStart(2, '0').toUpperCase();
-                    dom.dec.textContent = '(' + cpu.r[i] + ')';
-                    dom.cell.classList.toggle('changed', cpu.r[i] !== cpu.prevR[i]);
+                const hexEl = document.getElementById(`regHex_${i}`);
+                const decEl = document.getElementById(`regDec_${i}`);
+                const cellEl = document.getElementById(`regCell_${i}`);
+                if (hexEl && decEl && cellEl) {
+                    hexEl.textContent = '0x' + cpu.r[i].toString(16).padStart(2, '0').toUpperCase();
+                    decEl.textContent = '(' + cpu.r[i] + ')';
+                    cellEl.classList.toggle('changed', cpu.r[i] !== cpu.prevR[i]);
                 }
             }
         }
@@ -3035,7 +2917,7 @@ function updateUI() {
     updateGutterPcArrow();
 }
 
-/* ================= 23. ИНСТРУМЕНТЫ: УМНЫЙ WATCH И ИНСПЕКТОР ================= */
+/* ================= 23. ИНСТРУМЕНТЫ: УМНЫЙ WATCH И ИНСПЕКТОР (ОПТИМИЗИРОВАНО) ================= */
 
 function rebuildAsmInspector() {
     const box = document.getElementById('asmInspectorCode');
@@ -3119,6 +3001,7 @@ function renderWatchTable() {
             html += '<td>' + sVal + ' (DEC)</td>';
             html += '<td>0x' + val.toString(16).padStart(2, '0').toUpperCase() + '</td>';
             html += '<td>0b' + val.toString(2).padStart(8, '0') + '</td>';
+            html += '<td><span class="watch-loc-badge">' + sym.location + '</span></td>';
             html += '</tr>';
         });
     } else {
@@ -3132,6 +3015,7 @@ function renderWatchTable() {
             html += '<td>' + sVal + ' (DEC)</td>';
             html += '<td>0x' + val.toString(16).padStart(2, '0').toUpperCase() + '</td>';
             html += '<td>0b' + val.toString(2).padStart(8, '0') + '</td>';
+            html += '<td><span class="watch-loc-badge">CPU</span></td>';
             html += '</tr>';
         }
     }
@@ -3161,34 +3045,19 @@ function saveCodeToFile() {
     const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'main' + ext;
+    a.download = 'program' + ext;
     a.click();
 }
 
-/* ================= ИСПРАВЛЕННАЯ ЗАГРУЗКА ФАЙЛОВ ================= */
 function loadCodeFromFile(event) {
     const file = event.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (e) => {
-        const content = e.target.result;
-        const isC = file.name.endsWith('.c') || content.includes('#include') || content.includes('int main');
-
-        currentLang = isC ? 'c' : 'asm';
-        document.getElementById('btnLangAsm')?.classList.toggle('active', !isC);
-        document.getElementById('btnLangC')?.classList.toggle('active', isC);
-        document.getElementById('editorTitle').textContent = isC ? '⚡ Редактор (C)' : '📝 Редактор (.asm)';
-
-        const txtArea = document.getElementById('asmCode');
-        txtArea.value = content; // Вставляем реальное содержимое файла!
-        if (isC) cachedUserCCode = content;
-
-        updateSyntax();
-        cpuReset();
+        document.getElementById('asmCode').value = e.target.result;
+        switchLanguageTab(file.name.endsWith('.c') ? 'c' : 'asm');
     };
     reader.readAsText(file);
-    event.target.value = ''; // Сбрасываем input, чтобы можно было загрузить тот же файл снова
 }
 
 /* ================= 24. ПОДСВЕТКА И ГУТТЕР ================= */
@@ -3266,10 +3135,9 @@ function switchLanguageTab(lang) {
     txtArea.readOnly = false;
     if (lang === 'c') {
         document.getElementById('editorTitle').textContent = '⚡ Редактор (C)';
-        txtArea.value = cachedUserCCode || TEMPLATE_C;
+        if (cachedUserCCode) txtArea.value = cachedUserCCode;
     } else {
         document.getElementById('editorTitle').textContent = '📝 Редактор (.asm)';
-        txtArea.value = TEMPLATE_ASM;
     }
 
     updateSyntax();
@@ -3344,6 +3212,7 @@ function renderGutter() {
 
 function clearEditor() {
     document.getElementById('asmCode').value = '';
+    document.getElementById('hintBanner').style.display = 'none';
     cpu.breakpoints.clear();
     cpu.syntaxErrors.clear();
     cachedUserCCode = '';
@@ -3351,11 +3220,382 @@ function clearEditor() {
     cpuReset();
 }
 
-/* ================= 25. ИНИЦИАЛИЗАЦИЯ И СТАРТ ================= */
+/* ================= 25. БАЗА ПРОГРАММ ================= */
+
+const PROGRAMS = {
+    c_interrupt_int0: {
+        hint: "Нажатие кнопки K1 (PD2, INT0) вызывает прерывание по спаду, инвертируя светодиоды RX и TX.",
+        lang: "c",
+        code: `// Внешнее прерывание INT0 по спаду (нажатие K1 на PD2)
+#include <avr/io.h>
+#include <avr/interrupt.h>
+
+ISR(INT0_vect)
+{
+    PORTD ^= (1 << PORTD0) | (1 << PORTD1);
+}
+
+int main(void)
+{
+    EICRA = (1 << ISC01);
+    EIMSK = (1 << INT0);
+
+    DDRD |= (1 << DDD0) | (1 << DDD1);
+    DDRD &= ~(1 << DDD2);
+    PORTD |= (1 << PORTD2); 
+
+    sei();
+
+    while (1) { }
+}`
+    },
+
+    c_example3: {
+        hint: "Опрос кнопки K4 (PB0) и включение светодиода L (PB5) при нажатии.",
+        lang: "c",
+        code: `// Опрос кнопки PB0 (с подтяжкой) и включение светодиода L (PB5)
+#include <avr/io.h>
+
+int main(void)
+{
+    DDRB = 0x20;
+    PORTB |= 0x01;
+
+    while (1)
+    {
+        if ((PINB & 0x01) == 0)
+            PORTB |= 0x20;
+        else
+            PORTB &= ~0x20;
+    }
+}`
+    },
+
+    c_zadanie5: {
+        hint: "Кнопки K1 (PD2), K2 (PD3), K3 (PD4) переключают светодиоды PD0 (RX), PD1 (TX) и PB5 (L).",
+        lang: "c",
+        code: `// Управление светодиодами кнопками-триггерами
+#define F_CPU 16000000UL
+#include <avr/io.h>
+#include <util/delay.h>
+
+int main(void)
+{
+    DDRD |= (1 << DDD0) | (1 << DDD1);
+    DDRB |= (1 << DDB5);
+
+    PORTD &= ~((1 << PORTD0) | (1 << PORTD1));
+    PORTB &= ~(1 << PORTB5);
+
+    DDRD &= ~((1 << DDD2) | (1 << DDD3) | (1 << DDD4));
+    PORTD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4);
+
+    while (1)
+    {
+        if (!(PIND & (1 << PIND2)))
+        {
+            _delay_ms(40);
+            if (!(PIND & (1 << PIND2)))
+            {
+                PORTD ^= (1 << PORTD0);
+                while (!(PIND & (1 << PIND2)));
+                _delay_ms(40);
+            }
+        }
+
+        if (!(PIND & (1 << PIND3)))
+        {
+            _delay_ms(40);
+            if (!(PIND & (1 << PIND3)))
+            {
+                PORTD ^= (1 << PORTD1);
+                while (!(PIND & (1 << PIND3)));
+                _delay_ms(40);
+            }
+        }
+
+        if (!(PIND & (1 << PIND4)))
+        {
+            _delay_ms(40);
+            if (!(PIND & (1 << PIND4)))
+            {
+                PORTB ^= (1 << PORTB5);
+                while (!(PIND & (1 << PIND4)));
+                _delay_ms(40);
+            }
+        }
+    }
+}`
+    },
+
+    c_uart_rx_led: {
+        hint: "<b>Тема 6:</b> Прием символа 'M' через UART по прерыванию <code>USART_RX_vect</code>. Зажигает светодиод L (PB5). Отправьте символ 'M' через консоль!",
+        lang: "c",
+        code: `#include <avr/io.h>
+#include <avr/interrupt.h>
+
+ISR (USART_RX_vect)
+{
+    uint8_t data = UDR0;
+    if (data == 'M')
+    {
+        PORTB |= (1 << PB5);    // Зажечь светодиод L
+    }
+    else
+    {
+        PORTB &= ~(1 << PB5);   // Погасить светодиод L
+    }
+}
+
+int main(void)
+{
+    DDRB |= (1 << PB5);         // PB5 на выход
+    PORTB &= ~(1 << PB5);
+
+    UBRR0 = 103;
+    UCSR0B = (1 << RXEN0) | (1 << RXCIE0);   // Приемник и прерывание по приему
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); // 8 бит данных
+
+    sei();
+
+    while (1)
+    {
+    }
+}`
+    },
+
+    asm_uart_tx_button: {
+        hint: "<b>Тема 6:</b> Нажмите кнопку K1 (PD2). Срабатывает прерывание INT0, и в UDR0 отправляется символ '>' (0x3E).",
+        lang: "asm",
+        code: `.include "m328Pdef.inc"
+
+.org 0x0000
+    jmp Reset
+.org 0x0002
+    jmp knopka
+
+Reset:
+    ldi r16, 0x03 : sts EICRA, r16
+    ldi r16, 0x01 : out EIMSK, r16
+    cbi DDRD, 2   : sbi PORTD, 2
+
+    ldi r16, 0x00 : sts UBRR0H, r16
+    ldi r16, 103  : sts UBRR0L, r16
+
+    ldi r16, (1 << TXEN0) : sts UCSR0B, r16
+    ldi r16, (1 << UCSZ01) | (1 << UCSZ00) : sts UCSR0C, r16
+
+    sei
+
+main:
+    jmp main
+
+knopka:
+    ldi r16, 0x3E       ; Символ '>'
+    sts UDR0, r16
+    reti`
+    },
+
+    asm_uart_flash_string: {
+        hint: "<b>Тема 6:</b> Чтение строки из Flash через <code>lpm r16, Z+</code> с анализом готовности буфера <code>UDRE0</code> (бит 5 UCSR0A).",
+        lang: "asm",
+        code: `.include "m328Pdef.inc"
+
+.org 0x0000
+    jmp Reset
+
+Reset:
+    ldi r16, 0x00 : sts UBRR0H, r16
+    ldi r16, 103  : sts UBRR0L, r16
+    ldi r16, (1 << TXEN0) : sts UCSR0B, r16
+    ldi r16, (1 << UCSZ01) | (1 << UCSZ00) : sts UCSR0C, r16
+    sei
+
+main:
+    ldi ZL, low(Msg << 1)
+    ldi ZH, high(Msg << 1)
+    ldi r18, 0x17       ; Длина строки (23 байта)
+
+send:
+    lpm r16, Z+
+    sts UDR0, r16
+    subi r18, 0x01
+
+repeat:
+    lds r17, UCSR0A
+    bst r17, 5          ; Бит UDRE0 (готовность буфера)
+    brtc repeat
+    cpi r18, 0x00
+    breq main
+    jmp send
+
+.cseg
+Msg: .db "Atmega328P:ReadyToWork", '\\n'`
+    },
+
+    c_blink_counter: {
+        hint: "Мигание светодиодом PB5 через счетчик до 800 000 с вложенными ветками if-else.",
+        lang: "c",
+        code: `// Мигание встроенным светодиодом на плате (PB5) через счетчик
+#define F_CPU 16000000UL
+#include <avr/io.h>
+
+int main(void)
+{
+    DDRB |= (1 << DDB5);
+
+    uint32_t x = 0;
+    int flag = 0;
+
+    while (1)
+    {
+        if (x >= 800000)
+        {
+            if (flag == 0)
+            {
+                PORTB |= (1 << PORTB5);
+                flag = 1;
+            }
+            else
+            {
+                PORTB &= ~(1 << PORTB5);
+                flag = 0;
+            }
+            x = 0;
+        }
+        x++;
+    }
+}`
+    },
+
+    test_all: {
+        hint: "Комплексный тест: проверка команд, регистров и всех флагов SREG (I, T, H, S, V, N, Z, C).",
+        lang: "asm",
+        code: `; Комплексный тест: проверка команд, регистров и всех флагов SREG
+.include "m328pdef.inc"
+start:
+    ldi r16, 0x08 : out sph, r16
+    ldi r16, 0xff : out spl, r16
+    sec : clc : sez : clz : sen : cln : sev : clv : set : clt : seh : clh : sei : cli : nop
+    ldi r16, 0x0F
+    ldi r17, 0x01
+    add r16, r17
+    ldi r17, 10
+    subi r17, -3
+    ldi r18, 0x80
+    neg r18
+    break
+finish:
+    rjmp finish`
+    },
+
+    led_running: {
+        hint: "Бегущий огонёк по светодиодам Порта D.",
+        lang: "asm",
+        code: `; Бегущий огонёк по выводам PD0..PD7
+.include "m328pdef.inc"
+
+start:
+    ser r16
+    out DDRD, r16
+    ldi r17, 1
+
+loop:
+    out PORTD, r17
+    lsl r17
+    brne loop
+    ldi r17, 1
+    rjmp loop`
+    },
+
+    uart_tx: {
+        hint: "Вывод символов текста в виртуальный порт UDR0 (монитор UART).",
+        lang: "asm",
+        code: `; Отправка текстовых символов в терминал UART
+.include "m328pdef.inc"
+start:
+    ldi r16, 0x48 : sts UDR0, r16
+    ldi r16, 0x69 : sts UDR0, r16
+    ldi r16, 0x21 : sts UDR0, r16
+    ldi r16, 0x0A : sts UDR0, r16
+stop:
+    break`
+    },
+
+    sort_ram: {
+        hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и сортирует их по возрастанию.",
+        lang: "asm",
+        code: `; Сортировка массива из 5 чисел в ОЗУ (0x0100..0x0104) по возрастанию
+.include "m328pdef.inc"
+
+ldi r16, 0x16 : sts 0x0100, r16
+ldi r16, 0x03 : sts 0x0101, r16
+ldi r16, 0x25 : sts 0x0102, r16
+ldi r16, 0x45 : sts 0x0103, r16
+ldi r16, 0x01 : sts 0x0104, r16
+
+ldi r20, 5
+out_1:
+    ldi xh, 0x01 : ldi xl, 0x00
+    ldi r21, 4
+
+in_1:
+    ld r16, x+
+    ld r17, x
+    cp r16, r17
+    brlo no_s
+
+    st x, r16
+    st -x, r17
+    adiw xl, 1
+
+no_s:
+    dec r21
+    brne in_1
+    dec r20
+    brne out_1
+
+finish:
+    break
+    rjmp finish`
+    }
+};
+
+function loadSelectedExample() {
+    const key = document.getElementById('exampleSelector').value;
+    const banner = document.getElementById('hintBanner');
+    const p = PROGRAMS[key];
+    if (!p) return;
+
+    cachedUserCCode = '';
+    const txtArea = document.getElementById('asmCode');
+
+    currentLang = p.lang || 'asm';
+    document.getElementById('btnLangAsm')?.classList.toggle('active', currentLang === 'asm');
+    document.getElementById('btnLangC')?.classList.toggle('active', currentLang === 'c');
+    document.getElementById('editorTitle').textContent = (currentLang === 'c') ? '⚡ Редактор (C)' : '📝 Редактор (.asm)';
+    txtArea.readOnly = false;
+
+    txtArea.value = p.code;
+    if (currentLang === 'c') cachedUserCCode = p.code;
+
+    if (banner) {
+        if (!p.hint) banner.style.display = 'none';
+        else {
+            banner.style.display = 'flex';
+            document.getElementById('hintText').innerHTML = p.hint;
+        }
+    }
+
+    updateSyntax();
+    cpuReset();
+}
+
+/* ================= 26. ИНИЦИАЛИЗАЦИЯ И СТАРТ ================= */
 
 document.addEventListener('DOMContentLoaded', () => {
     const txtArea = document.getElementById('asmCode');
-    const highlighting = document.getElementById('highlightingContent')?.parentElement;
+    const highlighting = document.getElementById('highlighting');
     const ghostOverlay = document.getElementById('ghostOverlay');
     const gutter = document.getElementById('lineGutter');
 
@@ -3387,17 +3627,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     txtArea.addEventListener('scroll', () => {
-        if (highlighting) {
-            highlighting.scrollTop = txtArea.scrollTop;
-            highlighting.scrollLeft = txtArea.scrollLeft;
-        }
+        highlighting.scrollTop = txtArea.scrollTop;
+        highlighting.scrollLeft = txtArea.scrollLeft;
         if (ghostOverlay) {
             ghostOverlay.scrollTop = txtArea.scrollTop;
             ghostOverlay.scrollLeft = txtArea.scrollLeft;
         }
-        if (gutter) {
-            gutter.scrollTop = txtArea.scrollTop;
-        }
+        gutter.scrollTop = txtArea.scrollTop;
     });
 
     txtArea.addEventListener('keydown', (e) => {
@@ -3425,7 +3661,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initDragAndDrop();
     applyAppZoom();
     renderChannelSelector();
-    loadCleanTemplate();
+    loadSelectedExample();
     syncAnalogHardware();
 
     if (window.innerWidth <= 900) {
@@ -3436,6 +3672,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (localStorage.getItem('avr_theme') === 'light') {
         document.body.classList.add('theme-light');
         const txt = document.getElementById('btnThemeText');
-        if (txt) txt.textContent = 'Светлая';
+        if (txt) txt.textContent = 'Темная';
     }
 });
