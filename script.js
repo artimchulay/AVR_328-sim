@@ -3222,344 +3222,37 @@ function clearEditor() {
 
 /* ================= 25. БАЗА ПРОГРАММ ================= */
 
+
 const PROGRAMS = {
-    c_interrupt_int0: {
-        hint: "Нажатие кнопки K1 (PD2, INT0) вызывает прерывание по спаду, инвертируя светодиоды RX и TX.",
-        lang: "c",
-        code: `// Внешнее прерывание INT0 по спаду (нажатие K1 на PD2)
-#include <avr/io.h>
-#include <avr/interrupt.h>
-
-ISR(INT0_vect)
-{
-    PORTD ^= (1 << PORTD0) | (1 << PORTD1);
-}
-
-int main(void)
-{
-    EICRA = (1 << ISC01);
-    EIMSK = (1 << INT0);
-
-    DDRD |= (1 << DDD0) | (1 << DDD1);
-    DDRD &= ~(1 << DDD2);
-    PORTD |= (1 << PORTD2); 
-
-    sei();
-
-    while (1) { }
-}`
-    },
-
-    c_example3: {
-        hint: "Опрос кнопки K4 (PB0) и включение светодиода L (PB5) при нажатии.",
-        lang: "c",
-        code: `// Опрос кнопки PB0 (с подтяжкой) и включение светодиода L (PB5)
-#include <avr/io.h>
-
-int main(void)
-{
-    DDRB = 0x20;
-    PORTB |= 0x01;
-
-    while (1)
-    {
-        if ((PINB & 0x01) == 0)
-            PORTB |= 0x20;
-        else
-            PORTB &= ~0x20;
-    }
-}`
-    },
-
-    c_zadanie5: {
-        hint: "Кнопки K1 (PD2), K2 (PD3), K3 (PD4) переключают светодиоды PD0 (RX), PD1 (TX) и PB5 (L).",
-        lang: "c",
-        code: `// Управление светодиодами кнопками-триггерами
-#define F_CPU 16000000UL
-#include <avr/io.h>
-#include <util/delay.h>
-
-int main(void)
-{
-    DDRD |= (1 << DDD0) | (1 << DDD1);
-    DDRB |= (1 << DDB5);
-
-    PORTD &= ~((1 << PORTD0) | (1 << PORTD1));
-    PORTB &= ~(1 << PORTB5);
-
-    DDRD &= ~((1 << DDD2) | (1 << DDD3) | (1 << DDD4));
-    PORTD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4);
-
-    while (1)
-    {
-        if (!(PIND & (1 << PIND2)))
-        {
-            _delay_ms(40);
-            if (!(PIND & (1 << PIND2)))
-            {
-                PORTD ^= (1 << PORTD0);
-                while (!(PIND & (1 << PIND2)));
-                _delay_ms(40);
-            }
-        }
-
-        if (!(PIND & (1 << PIND3)))
-        {
-            _delay_ms(40);
-            if (!(PIND & (1 << PIND3)))
-            {
-                PORTD ^= (1 << PORTD1);
-                while (!(PIND & (1 << PIND3)));
-                _delay_ms(40);
-            }
-        }
-
-        if (!(PIND & (1 << PIND4)))
-        {
-            _delay_ms(40);
-            if (!(PIND & (1 << PIND4)))
-            {
-                PORTB ^= (1 << PORTB5);
-                while (!(PIND & (1 << PIND4)));
-                _delay_ms(40);
-            }
-        }
-    }
-}`
-    },
-
-    c_uart_rx_led: {
-        hint: "<b>Тема 6:</b> Прием символа 'M' через UART по прерыванию <code>USART_RX_vect</code>. Зажигает светодиод L (PB5). Отправьте символ 'M' через консоль!",
+    template_c: {
+        hint: "Шаблон для программирования на C.",
         lang: "c",
         code: `#include <avr/io.h>
-#include <avr/interrupt.h>
-
-ISR (USART_RX_vect)
-{
-    uint8_t data = UDR0;
-    if (data == 'M')
-    {
-        PORTB |= (1 << PB5);    // Зажечь светодиод L
-    }
-    else
-    {
-        PORTB &= ~(1 << PB5);   // Погасить светодиод L
-    }
-}
 
 int main(void)
 {
-    DDRB |= (1 << PB5);         // PB5 на выход
-    PORTB &= ~(1 << PB5);
-
-    UBRR0 = 103;
-    UCSR0B = (1 << RXEN0) | (1 << RXCIE0);   // Приемник и прерывание по приему
-    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); // 8 бит данных
-
-    sei();
 
     while (1)
     {
+        // Ваш код здесь   
     }
 }`
     },
 
-    asm_uart_tx_button: {
-        hint: "<b>Тема 6:</b> Нажмите кнопку K1 (PD2). Срабатывает прерывание INT0, и в UDR0 отправляется символ '>' (0x3E).",
+    template_asm: {
+        hint: "Шаблон для программирования на Ассемблере. ",
         lang: "asm",
-        code: `.include "m328Pdef.inc"
-
-.org 0x0000
-    jmp Reset
-.org 0x0002
-    jmp knopka
-
-Reset:
-    ldi r16, 0x03 : sts EICRA, r16
-    ldi r16, 0x01 : out EIMSK, r16
-    cbi DDRD, 2   : sbi PORTD, 2
-
-    ldi r16, 0x00 : sts UBRR0H, r16
-    ldi r16, 103  : sts UBRR0L, r16
-
-    ldi r16, (1 << TXEN0) : sts UCSR0B, r16
-    ldi r16, (1 << UCSZ01) | (1 << UCSZ00) : sts UCSR0C, r16
-
-    sei
-
+        code: `.include "m328pdef.inc"
+// Ваш код   
 main:
-    jmp main
-
-knopka:
-    ldi r16, 0x3E       ; Символ '>'
-    sts UDR0, r16
-    reti`
-    },
-
-    asm_uart_flash_string: {
-        hint: "<b>Тема 6:</b> Чтение строки из Flash через <code>lpm r16, Z+</code> с анализом готовности буфера <code>UDRE0</code> (бит 5 UCSR0A).",
-        lang: "asm",
-        code: `.include "m328Pdef.inc"
-
-.org 0x0000
-    jmp Reset
-
-Reset:
-    ldi r16, 0x00 : sts UBRR0H, r16
-    ldi r16, 103  : sts UBRR0L, r16
-    ldi r16, (1 << TXEN0) : sts UCSR0B, r16
-    ldi r16, (1 << UCSZ01) | (1 << UCSZ00) : sts UCSR0C, r16
-    sei
-
-main:
-    ldi ZL, low(Msg << 1)
-    ldi ZH, high(Msg << 1)
-    ldi r18, 0x17       ; Длина строки (23 байта)
-
-send:
-    lpm r16, Z+
-    sts UDR0, r16
-    subi r18, 0x01
-
-repeat:
-    lds r17, UCSR0A
-    bst r17, 5          ; Бит UDRE0 (готовность буфера)
-    brtc repeat
-    cpi r18, 0x00
-    breq main
-    jmp send
-
-.cseg
-Msg: .db "Atmega328P:ReadyToWork", '\\n'`
-    },
-
-    c_blink_counter: {
-        hint: "Мигание светодиодом PB5 через счетчик до 800 000 с вложенными ветками if-else.",
-        lang: "c",
-        code: `// Мигание встроенным светодиодом на плате (PB5) через счетчик
-#define F_CPU 16000000UL
-#include <avr/io.h>
-
-int main(void)
-{
-    DDRB |= (1 << DDB5);
-
-    uint32_t x = 0;
-    int flag = 0;
-
-    while (1)
-    {
-        if (x >= 800000)
-        {
-            if (flag == 0)
-            {
-                PORTB |= (1 << PORTB5);
-                flag = 1;
-            }
-            else
-            {
-                PORTB &= ~(1 << PORTB5);
-                flag = 0;
-            }
-            x = 0;
-        }
-        x++;
-    }
-}`
-    },
-
-    test_all: {
-        hint: "Комплексный тест: проверка команд, регистров и всех флагов SREG (I, T, H, S, V, N, Z, C).",
-        lang: "asm",
-        code: `; Комплексный тест: проверка команд, регистров и всех флагов SREG
-.include "m328pdef.inc"
-start:
-    ldi r16, 0x08 : out sph, r16
-    ldi r16, 0xff : out spl, r16
-    sec : clc : sez : clz : sen : cln : sev : clv : set : clt : seh : clh : sei : cli : nop
-    ldi r16, 0x0F
-    ldi r17, 0x01
-    add r16, r17
-    ldi r17, 10
-    subi r17, -3
-    ldi r18, 0x80
-    neg r18
-    break
-finish:
-    rjmp finish`
-    },
-
-    led_running: {
-        hint: "Бегущий огонёк по светодиодам Порта D.",
-        lang: "asm",
-        code: `; Бегущий огонёк по выводам PD0..PD7
-.include "m328pdef.inc"
-
-start:
-    ser r16
-    out DDRD, r16
-    ldi r17, 1
+    nop
 
 loop:
-    out PORTD, r17
-    lsl r17
-    brne loop
-    ldi r17, 1
     rjmp loop`
-    },
-
-    uart_tx: {
-        hint: "Вывод символов текста в виртуальный порт UDR0 (монитор UART).",
-        lang: "asm",
-        code: `; Отправка текстовых символов в терминал UART
-.include "m328pdef.inc"
-start:
-    ldi r16, 0x48 : sts UDR0, r16
-    ldi r16, 0x69 : sts UDR0, r16
-    ldi r16, 0x21 : sts UDR0, r16
-    ldi r16, 0x0A : sts UDR0, r16
-stop:
-    break`
-    },
-
-    sort_ram: {
-        hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и сортирует их по возрастанию.",
-        lang: "asm",
-        code: `; Сортировка массива из 5 чисел в ОЗУ (0x0100..0x0104) по возрастанию
-.include "m328pdef.inc"
-
-ldi r16, 0x16 : sts 0x0100, r16
-ldi r16, 0x03 : sts 0x0101, r16
-ldi r16, 0x25 : sts 0x0102, r16
-ldi r16, 0x45 : sts 0x0103, r16
-ldi r16, 0x01 : sts 0x0104, r16
-
-ldi r20, 5
-out_1:
-    ldi xh, 0x01 : ldi xl, 0x00
-    ldi r21, 4
-
-in_1:
-    ld r16, x+
-    ld r17, x
-    cp r16, r17
-    brlo no_s
-
-    st x, r16
-    st -x, r17
-    adiw xl, 1
-
-no_s:
-    dec r21
-    brne in_1
-    dec r20
-    brne out_1
-
-finish:
-    break
-    rjmp finish`
     }
 };
+
+
 
 function loadSelectedExample() {
     const key = document.getElementById('exampleSelector').value;
