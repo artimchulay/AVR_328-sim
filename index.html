@@ -18,10 +18,10 @@
         <div class="header-tier tier-top">
             <div class="header-group">
                 <div class="brand-title">
-                    ⚡ AVR Studio <span class="brand-badge">ATmega328P</span>
+                    ⚡ <span style="color:#10b981;">AVR</span> Studio <span class="brand-badge">ATmega328P</span>
                 </div>
 
-                <!-- ПЕРЕКЛЮЧАТЕЛЬ ЯЗЫКА -->
+                <!-- ВЫБОР ЯЗЫКА -->
                 <div class="lang-toggle-box">
                     <button type="button" class="lang-btn active" id="btnLangC" onclick="switchLanguageTab('c')">C</button>
                     <button type="button" class="lang-btn" id="btnLangAsm" onclick="switchLanguageTab('asm')">ASM</button>
@@ -30,13 +30,13 @@
 
             <!-- ГЛАВНЫЕ КНОПКИ ЗАПУСКА -->
             <div class="header-group">
-                <button type="button" class="btn-ui btn-primary" id="btnRun" onclick="toggleRun()" title="Пуск / Пауза">
+                <button type="button" class="btn-ui btn-run" id="btnRun" onclick="toggleRun()" title="Пуск / Пауза">
                     <span id="runIcon">▶</span> <span id="runText">Пуск</span>
                 </button>
-                <button type="button" class="btn-ui" id="btnStep" onclick="cpuStep()" title="Шаг на 1 команду (F11)">
+                <button type="button" class="btn-ui btn-step" id="btnStep" onclick="cpuStep()" title="Шаг на 1 команду (F11)">
                     ⏭ Шаг
                 </button>
-                <button type="button" class="btn-ui" id="btnReset" onclick="cpuReset()" title="Сбросить всё (CPU, экраны, терминал)">
+                <button type="button" class="btn-ui btn-reset" id="btnReset" onclick="cpuReset()" title="Сбросить процессор, память и дисплеи">
                     🔄 Сброс
                 </button>
             </div>
@@ -46,7 +46,7 @@
                 <div class="speed-control-box">
                     <span>Скорость:</span>
                     <input type="range" class="slider-speed" id="speedSlider" min="1" max="500" value="40" oninput="updateSpeed(this.value)">
-                    <span id="speedVal" style="min-width: 55px; font-weight: bold;">40 оп/с</span>
+                    <span id="speedVal" style="min-width: 55px; font-weight: bold; color:#38bdf8;">40 оп/с</span>
                 </div>
                 <div class="badge-info highlight" id="cycleCounter">Такты: 0</div>
             </div>
@@ -58,10 +58,10 @@
                 <button type="button" class="btn-ui" id="btnNewTemplate" onclick="loadCleanTemplate()" title="Вставить чистый шаблон для текущего языка">
                     📄 Шаблон
                 </button>
-                <button type="button" class="btn-ui" id="btnSaveCode" onclick="saveCodeToFile()" title="Сохранить код в файл .c или .asm">
+                <button type="button" class="btn-ui" id="btnSaveCode" onclick="saveCodeToFile()" title="Сохранить код в файл">
                     💾 Сохранить
                 </button>
-                <button type="button" class="btn-ui" id="btnLoadFile" onclick="document.getElementById('fileInput').click()" title="Загрузить исходник">
+                <button type="button" class="btn-ui" id="btnLoadFile" onclick="document.getElementById('fileInput').click()" title="Загрузить файл .c или .asm">
                     📂 Открыть
                 </button>
                 <input type="file" id="fileInput" style="display:none" accept=".c,.asm,.txt" onchange="loadCodeFromFile(event)">
@@ -76,9 +76,9 @@
                     🌓 <span id="btnThemeText">Тема</span>
                 </button>
                 <div class="header-group" style="gap:2px;">
-                    <button type="button" class="btn-ui" style="padding:7px 9px;" onclick="changeAppZoom(-0.1)">−</button>
+                    <button type="button" class="btn-ui" style="padding:4px 8px;" onclick="changeAppZoom(-0.1)">−</button>
                     <span class="badge-info" id="zoomVal" onclick="resetAppZoom()" style="cursor:pointer;" title="Сбросить зум">100%</span>
-                    <button type="button" class="btn-ui" style="padding:7px 9px;" onclick="changeAppZoom(0.1)">+</button>
+                    <button type="button" class="btn-ui" style="padding:4px 8px;" onclick="changeAppZoom(0.1)">+</button>
                 </div>
             </div>
 
@@ -98,24 +98,24 @@
 
         <!-- ПАНЕЛЬ 1: РЕДАКТОР КОДА -->
         <section class="slide-panel panel-editor" id="panel_editor" data-panel-id="editor">
-            <div class="slide-header">
+            <div class="slide-header" draggable="true">
                 <div class="slide-header-left">
                     <span class="drag-grip">⋮⋮</span>
                     <span id="editorTitle">⚡ Редактор (C)</span>
                 </div>
                 <div class="header-group" style="gap:4px;">
-                    <button type="button" class="btn-ui" style="padding:3px 6px; font-size:11px;" onclick="changeFontSize(-1)">A-</button>
+                    <button type="button" class="btn-ui" style="padding:2px 6px; font-size:11px;" onclick="changeFontSize(-1)">A-</button>
                     <span id="fontSizeVal" style="font-size:11px; color:var(--text-muted);">14px</span>
-                    <button type="button" class="btn-ui" style="padding:3px 6px; font-size:11px;" onclick="changeFontSize(1)">A+</button>
-                    <button type="button" class="btn-ui" style="padding:3px 6px; font-size:11px;" onclick="clearEditor()" title="Очистить редактор">🗑</button>
-                    <span class="badge-info" id="compilerStatus" style="font-size:11px; padding:3px 6px;">Готов</span>
+                    <button type="button" class="btn-ui" style="padding:2px 6px; font-size:11px;" onclick="changeFontSize(1)">A+</button>
+                    <button type="button" class="btn-ui" style="padding:2px 6px; font-size:11px;" onclick="clearEditor()" title="Очистить редактор">🗑</button>
+                    <span class="badge-info" id="compilerStatus" style="font-size:11px; padding:2px 6px;">Готов</span>
                 </div>
             </div>
             <div class="slide-body" style="padding:0;">
                 <div class="editor-wrapper">
                     <div class="line-gutter" id="lineGutter"></div>
                     <div class="code-area-container">
-                        <textarea class="code-textarea" id="asmCode" spellcheck="false" placeholder="Введите код..."></textarea>
+                        <textarea class="code-textarea" id="asmCode" spellcheck="false" placeholder="Введите код программы..."></textarea>
                         <pre class="code-highlighting"><code id="highlightingContent"></code></pre>
                         <pre class="ghost-overlay" id="ghostOverlay"></pre>
                     </div>
@@ -125,12 +125,12 @@
 
         <!-- ПАНЕЛЬ 2: ИНТЕРАКТИВНАЯ ПЛАТА -->
         <section class="slide-panel" id="panel_board" data-panel-id="board">
-            <div class="slide-header">
+            <div class="slide-header" draggable="true">
                 <div class="slide-header-left">
                     <span class="drag-grip">⋮⋮</span>
                     <span>💡 Интерактивная плата ввода-вывода</span>
                 </div>
-                <button type="button" class="btn-ui" style="padding:3px 6px; font-size:11px;" onclick="openIoModal()">⚙ Настройка I/O</button>
+                <button type="button" class="btn-ui" style="padding:2px 6px; font-size:11px;" onclick="openIoModal()">⚙ Настройка I/O</button>
             </div>
             <div class="slide-body">
                 <!-- LCD 1602 -->
@@ -172,21 +172,21 @@
                             <span style="font-size:11px;">RX <span class="led-light" id="ledRX" style="display:inline-block; vertical-align:middle;"></span></span>
                         </div>
                     </div>
-                    <div class="card-header" style="margin-top:10px;">
+                    <div class="card-header" style="margin-top:8px;">
                         <span>Потенциометр (ADC0 / AIN1)</span>
                         <span class="badge-info" id="potVoltageBadge" style="font-size:11px; padding:2px 6px;">0.00 V (ADC: 0)</span>
                     </div>
                     <input type="range" style="width:100%; accent-color:var(--accent-blue);" id="potSlider" min="0" max="1023" value="0" oninput="updatePotentiometer(this.value)">
                 </div>
 
-                <!-- ЛИНЕЙКА СВЕТОДИОДОВ ПОРТА -->
+                <!-- ЛИНЕЙКА СВЕТОДИОДОВ -->
                 <div class="card">
                     <div class="card-header">
                         <span id="ledPortTitle">Линейка светодиодов (Порт D)</span>
                         <div class="header-group" style="gap:2px;">
-                            <button type="button" class="btn-ui active port-btn" id="btnPortD" style="padding:2px 6px; font-size:10px;" onclick="selectLedPort('D')">D</button>
-                            <button type="button" class="btn-ui port-btn" id="btnPortB" style="padding:2px 6px; font-size:10px;" onclick="selectLedPort('B')">B</button>
-                            <button type="button" class="btn-ui port-btn" id="btnPortC" style="padding:2px 6px; font-size:10px;" onclick="selectLedPort('C')">C</button>
+                            <button type="button" class="btn-ui active port-btn" id="btnPortD" style="padding:2px 6px; font-size:10px;" onclick="selectLedPort('D')">Порт D</button>
+                            <button type="button" class="btn-ui port-btn" id="btnPortB" style="padding:2px 6px; font-size:10px;" onclick="selectLedPort('B')">Порт B</button>
+                            <button type="button" class="btn-ui port-btn" id="btnPortC" style="padding:2px 6px; font-size:10px;" onclick="selectLedPort('C')">Порт C</button>
                         </div>
                     </div>
                     <div class="led-bar">
@@ -221,7 +221,7 @@
 
         <!-- ПАНЕЛЬ 3: ЛОГИЧЕСКИЙ АНАЛИЗАТОР -->
         <section class="slide-panel" id="panel_analyzer" data-panel-id="analyzer">
-            <div class="slide-header">
+            <div class="slide-header" draggable="true">
                 <div class="slide-header-left">
                     <span class="drag-grip">⋮⋮</span>
                     <span>📊 Логический анализатор сигналов</span>
@@ -244,7 +244,7 @@
 
         <!-- ПАНЕЛЬ 4: РЕГИСТРЫ И ПАМЯТЬ -->
         <section class="slide-panel" id="panel_cpu" data-panel-id="cpu">
-            <div class="slide-header">
+            <div class="slide-header" draggable="true">
                 <div class="slide-header-left">
                     <span class="drag-grip">⋮⋮</span>
                     <span>⚙ Регистры процессора и память</span>
@@ -254,7 +254,7 @@
                 <!-- УКАЗАТЕЛИ PC, SP, X, Y, Z -->
                 <div class="card">
                     <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:4px; font-size:10px; text-align:center;">
-                        <div><span style="color:var(--text-muted)">PC:</span> <b id="valPC">0x0000</b></div>
+                        <div><span style="color:var(--text-muted)">PC:</span> <b id="valPC" style="color:#38bdf8;">0x0000</b></div>
                         <div><span style="color:var(--text-muted)">SP:</span> <b id="valSP">0x08FF</b></div>
                         <div><span style="color:var(--text-muted)">X:</span> <b id="valX">0x0000</b></div>
                         <div><span style="color:var(--text-muted)">Y:</span> <b id="valY">0x0000</b></div>
@@ -264,7 +264,7 @@
 
                 <!-- ФЛАГИ SREG -->
                 <div class="card">
-                    <div class="card-header"><span>Флаги статуса SREG [I T H S V N Z C]</span></div>
+                    <div class="card-header"><span>Регистр состояния SREG [I T H S V N Z C]</span></div>
                     <div class="flags-grid" id="flagsGrid"></div>
                 </div>
 
@@ -295,7 +295,7 @@
 
         <!-- ПАНЕЛЬ 5: ИНСТРУМЕНТЫ -->
         <section class="slide-panel panel-hidden" id="panel_tools" data-panel-id="tools">
-            <div class="slide-header">
+            <div class="slide-header" draggable="true">
                 <div class="slide-header-left">
                     <span class="drag-grip">⋮⋮</span>
                     <span>🛠 Дополнительные инструменты</span>
@@ -304,11 +304,11 @@
             <div class="slide-body">
                 <!-- ИНСПЕКТОР АССЕМБЛЕРА -->
                 <div class="card">
-                    <div class="card-header"><span>Инспектор Си → Ассемблер (Текущий PC)</span></div>
+                    <div class="card-header"><span>Инспектор Си → Ассемблер</span></div>
                     <div class="inspector-code" id="asmInspectorCode"></div>
                 </div>
 
-                <!-- ТАБЛИЦА ПЕРЕМЕННЫХ WATCH -->
+                <!-- ТАБЛИЦА WATCH -->
                 <div class="card">
                     <div class="card-header">
                         <span>Умный Watch переменных</span>
@@ -326,7 +326,7 @@
 
                 <!-- КОНВЕРТЕР СИСТЕМ СЧИСЛЕНИЯ -->
                 <div class="card">
-                    <div class="card-header"><span>Конвертер систем счисления</span></div>
+                    <div class="card-header"><span>Калькулятор систем счисления</span></div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:6px;">
                         <input type="text" class="terminal-input" id="convDec" placeholder="DEC (255)" oninput="onConverterInput('dec')">
                         <input type="text" class="terminal-input" id="convHex" placeholder="HEX (0xFF)" oninput="onConverterInput('hex')">
