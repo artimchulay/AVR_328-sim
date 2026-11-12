@@ -260,6 +260,8 @@ function initDragAndDrop() {
         const header = panel.querySelector('.slide-header');
         if (!header) return;
 
+        header.setAttribute('draggable', 'true');
+
         header.addEventListener('dragstart', (e) => {
             draggedPanel = panel;
             panel.classList.add('dragging');
@@ -3163,15 +3165,30 @@ function saveCodeToFile() {
     a.click();
 }
 
+/* ================= ИСПРАВЛЕННАЯ ЗАГРУЗКА ФАЙЛОВ ================= */
 function loadCodeFromFile(event) {
     const file = event.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (e) => {
-        document.getElementById('asmCode').value = e.target.result;
-        switchLanguageTab(file.name.endsWith('.c') ? 'c' : 'asm');
+        const content = e.target.result;
+        const isC = file.name.endsWith('.c') || content.includes('#include') || content.includes('int main');
+
+        currentLang = isC ? 'c' : 'asm';
+        document.getElementById('btnLangAsm')?.classList.toggle('active', !isC);
+        document.getElementById('btnLangC')?.classList.toggle('active', isC);
+        document.getElementById('editorTitle').textContent = isC ? '⚡ Редактор (C)' : '📝 Редактор (.asm)';
+
+        const txtArea = document.getElementById('asmCode');
+        txtArea.value = content; // Вставляем реальное содержимое файла!
+        if (isC) cachedUserCCode = content;
+
+        updateSyntax();
+        cpuReset();
     };
     reader.readAsText(file);
+    event.target.value = ''; // Сбрасываем input, чтобы можно было загрузить тот же файл снова
 }
 
 /* ================= 24. ПОДСВЕТКА И ГУТТЕР ================= */
