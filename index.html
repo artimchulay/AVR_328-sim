@@ -14,36 +14,33 @@
              1. ВЕРХНЯЯ ШАПКА TOOLBAR
              ========================================================= -->
         <header class="toolbar" id="mainToolbar">
-            <!-- Левая зона: Логотип и выбор программы -->
+            <!-- Левая зона: Логотип, выбор шаблона и под ним — Пуск / Шаг / Сброс -->
             <div class="toolbar-left">
                 <div class="logo">⚡ <span>AVR Studio</span></div>
-                <div class="select-wrapper">
-                    <select id="exampleSelector" onchange="loadSelectedExample()">
-                        <option value="template_c">⚡ Шаблон на C</option>
-                        <option value="template_asm" selected>📝 Шаблон на ASM</option>
-                        </select>  
+                <div class="toolbar-selector-col">
+                    <div class="select-wrapper">
+                        <select id="exampleSelector" onchange="loadSelectedExample()">
+                            <option value="tpl_asm" selected>📝 Шаблон: Assembler (.asm)</option>
+                            <option value="tpl_c">⚡ Шаблон: C (avr-gcc)</option>
+                        </select>
+                    </div>
+                    <!-- Вторая строка под выбором файла/шаблона: Пуск, Шаг, Сброс -->
+                    <div class="btn-group sim-btn-group">
+                        <button type="button" id="btnRun" class="btn btn-run" onclick="toggleRun()" title="Пуск / Пауза">
+                            <span id="runIcon">▶</span> <span id="runText" class="btn-text">Пуск</span>
+                        </button>
+                        <button type="button" id="btnStep" class="btn btn-step" onclick="cpuStep()" title="Один шаг (F11)">
+                            <span>⏭</span> <span class="btn-text">Шаг</span>
+                        </button>
+                        <button type="button" id="btnReset" class="btn btn-reset" onclick="cpuReset()" title="Сброс контроллера">
+                            <span>🔄</span> <span class="btn-text">Сброс</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Центральная зона: Управление CPU + Файлы + Зум -->
+            <!-- Центральная зона: Файлы + Тема + Скорость + Зум + Такты -->
             <div class="toolbar-center">
-                <!-- Группа симуляции -->
-                <div class="btn-group">
-                    <button type="button" id="btnStep" class="btn btn-step" onclick="cpuStep()" title="Один шаг (F11)">
-                        <span>⏭</span> <span class="btn-text">Шаг</span>
-                    </button>
-                    <button type="button" id="btnRun" class="btn btn-run" onclick="toggleRun()" title="Пуск / Пауза">
-                        <span id="runIcon">▶</span> <span id="runText" class="btn-text">Пуск</span>
-                    </button>
-                    <button type="button" id="btnReset" class="btn btn-reset" onclick="cpuReset()" title="Сброс контроллера">
-                        <span>🔄</span> <span class="btn-text">Сброс</span>
-                    </button>
-                </div>
-
-                <!-- Разделитель с отступом от случайных кликов -->
-                <div class="toolbar-divider"></div>
-
-                <!-- Группа работы с файлами (перенесена наверх) -->
                 <div class="btn-group">
                     <button type="button" class="btn btn-file" onclick="saveCodeToFile()" title="Сохранить исходный код на диск">
                         💾 <span class="btn-text">Сохранить</span>
@@ -55,7 +52,6 @@
                     <button type="button" class="btn btn-hex-top" onclick="exportIntelHex()" title="Скомпилировать и скачать файл прошивки Intel HEX (.hex)">
                         📦 .HEX
                     </button>
-                     <!-- КНОПКА СВЕТЛОЙ/ТЕМНОЙ ТЕМЫ -->
                     <button type="button" class="btn btn-file" id="btnThemeToggle" onclick="toggleTheme()" title="Переключить тему (Светлая / Темная)">
                         🌓 <span class="btn-text" id="btnThemeText">Светлая</span>
                     </button>
@@ -89,10 +85,10 @@
             </nav>
         </header>
 
-        <!-- Подсказка к выбранной программе -->
+        <!-- Подсказка к выбранному шаблону -->
         <div class="hint-banner" id="hintBanner">
             <span class="hint-icon">💡</span>
-            <div class="hint-text" id="hintText">Инструкция к выбранному коду...</div>
+            <div class="hint-text" id="hintText">Инструкция к выбранному шаблону...</div>
         </div>
 
         <!-- =========================================================
@@ -108,7 +104,7 @@
                             <span class="drag-handle" title="Перетащить колонку">⠿</span>
                             <h2 id="editorTitle">📝 Редактор (.asm)</h2>
                             
-                            <!-- Переключатель ASM и C (C->ASM убрана в инструменты) -->
+                            <!-- Переключатель ASM и C -->
                             <div class="lang-switch-btns">
                                 <button type="button" class="lang-btn active" id="btnLangAsm" onclick="switchLanguageTab('asm')">ASM</button>
                                 <button type="button" class="lang-btn" id="btnLangC" onclick="switchLanguageTab('c')">C</button>
@@ -410,7 +406,7 @@
                             </div>
                         </div>
 
-                        <!-- 3. Инспектор Си ➔ Ассемблер с подсветкой и стрелкой PC (Сворачиваемый) -->
+                        <!-- 3. Инспектор Си -> Ассемблер с подсветкой и стрелкой PC (Сворачиваемый) -->
                         <div class="board-card" id="card_inspector">
                             <div class="card-collapsible-header" onclick="toggleCardCollapse('card_inspector')">
                                 <div class="card-title">Инспектор Си ➔ Ассемблер (с текущей строкой PC)</div>
