@@ -644,26 +644,26 @@ function renderExtraPins() {
 /* ================= 9. ОПТИМИЗИРОВАННЫЙ ЛОГИЧЕСКИЙ АНАЛИЗАТОР ================= */
 
 const ALL_CHANNELS = [
-    { id: 'PD0', port: 'D', pin: 0, label: 'PD0 (RX)', color: '#38bdf8' },
-    { id: 'PD1', port: 'D', pin: 1, label: 'PD1 (TX)', color: '#06b6d4' },
-    { id: 'PD2', port: 'D', pin: 2, label: 'PD2 (INT0)', color: '#3b82f6' },
-    { id: 'PD3', port: 'D', pin: 3, label: 'PD3 (INT1)', color: '#6366f1' },
-    { id: 'PD4', port: 'D', pin: 4, label: 'PD4 (K3)',  color: '#8b5cf6' },
-    { id: 'PD5', port: 'D', pin: 5, label: 'PD5',       color: '#a855f7' },
-    { id: 'PD6', port: 'D', pin: 6, label: 'PD6 (AIN0)', color: '#d946ef' },
-    { id: 'PD7', port: 'D', pin: 7, label: 'PD7 (AIN1)', color: '#ec4899' },
-    { id: 'PB0', port: 'B', pin: 0, label: 'PB0 (K4)',  color: '#f43f5e' },
-    { id: 'PB1', port: 'B', pin: 1, label: 'PB1 (K5)',  color: '#fb7185' },
-    { id: 'PB2', port: 'B', pin: 2, label: 'PB2 (K6)',  color: '#f97316' },
-    { id: 'PB3', port: 'B', pin: 3, label: 'PB3 (K7)',  color: '#fb923c' },
-    { id: 'PB4', port: 'B', pin: 4, label: 'PB4 (K8)',  color: '#facc15' },
-    { id: 'PB5', port: 'B', pin: 5, label: 'PB5 (LED L)', color: '#eab308' },
-    { id: 'PC0', port: 'C', pin: 0, label: 'PC0 (ADC0)', color: '#84cc16' },
-    { id: 'PC1', port: 'C', pin: 1, label: 'PC1 (ADC1)', color: '#22c55e' },
-    { id: 'PC2', port: 'C', pin: 2, label: 'PC2 (ADC2)', color: '#10b981' },
-    { id: 'PC3', port: 'C', pin: 3, label: 'PC3 (ADC3)', color: '#14b8a6' },
-    { id: 'PC4', port: 'C', pin: 4, label: 'PC4 (SDA)',  color: '#2dd4bf' },
-    { id: 'PC5', port: 'C', pin: 5, label: 'PC5 (SCL)',  color: '#38bdf8' }
+    { id: 'PD0', port: 'D', pin: 0, label: 'PD0 (RX)',   color: '#38bdf8', lightColor: '#0284c7' },
+    { id: 'PD1', port: 'D', pin: 1, label: 'PD1 (TX)',   color: '#06b6d4', lightColor: '#0891b2' },
+    { id: 'PD2', port: 'D', pin: 2, label: 'PD2 (INT0)', color: '#3b82f6', lightColor: '#2563eb' },
+    { id: 'PD3', port: 'D', pin: 3, label: 'PD3 (INT1)', color: '#6366f1', lightColor: '#4f46e5' },
+    { id: 'PD4', port: 'D', pin: 4, label: 'PD4 (K3)',   color: '#8b5cf6', lightColor: '#7c3aed' },
+    { id: 'PD5', port: 'D', pin: 5, label: 'PD5',        color: '#a855f7', lightColor: '#9333ea' },
+    { id: 'PD6', port: 'D', pin: 6, label: 'PD6 (AIN0)', color: '#d946ef', lightColor: '#c026d3' },
+    { id: 'PD7', port: 'D', pin: 7, label: 'PD7 (AIN1)', color: '#ec4899', lightColor: '#db2777' },
+    { id: 'PB0', port: 'B', pin: 0, label: 'PB0 (K4)',   color: '#f43f5e', lightColor: '#e11d48' },
+    { id: 'PB1', port: 'B', pin: 1, label: 'PB1 (K5)',   color: '#fb7185', lightColor: '#be123c' },
+    { id: 'PB2', port: 'B', pin: 2, label: 'PB2 (K6)',   color: '#f97316', lightColor: '#ea580c' },
+    { id: 'PB3', port: 'B', pin: 3, label: 'PB3 (K7)',   color: '#fb923c', lightColor: '#c2410c' },
+    { id: 'PB4', port: 'B', pin: 4, label: 'PB4 (K8)',   color: '#facc15', lightColor: '#b45309' },
+    { id: 'PB5', port: 'B', pin: 5, label: 'PB5 (LED L)',color: '#eab308', lightColor: '#a16207' },
+    { id: 'PC0', port: 'C', pin: 0, label: 'PC0 (ADC0)', color: '#84cc16', lightColor: '#4d7c0f' },
+    { id: 'PC1', port: 'C', pin: 1, label: 'PC1 (ADC1)', color: '#22c55e', lightColor: '#15803d' },
+    { id: 'PC2', port: 'C', pin: 2, label: 'PC2 (ADC2)', color: '#10b981', lightColor: '#047857' },
+    { id: 'PC3', port: 'C', pin: 3, label: 'PC3 (ADC3)', color: '#14b8a6', lightColor: '#0f766e' },
+    { id: 'PC4', port: 'C', pin: 4, label: 'PC4 (SDA)',  color: '#2dd4bf', lightColor: '#0d9488' },
+    { id: 'PC5', port: 'C', pin: 5, label: 'PC5 (SCL)',  color: '#38bdf8', lightColor: '#0369a1' }
 ];
 
 let selectedChannelIds = new Set(['PD2', 'PD1', 'PD0', 'PB5', 'PB0']);
@@ -677,12 +677,18 @@ const analyzer = {
 let analyzerScheduled = false;
 let lastPinSampleHash = -1;
 
+function getChannelColor(ch) {
+    const isLight = document.body.classList.contains('theme-light');
+    return isLight ? (ch.lightColor || ch.color) : ch.color;
+}
+
 function renderChannelSelector() {
     const container = document.getElementById('analyzerChannelSelector');
     if (!container) return;
     container.innerHTML = ALL_CHANNELS.map(ch => {
         const active = selectedChannelIds.has(ch.id);
-        const style = active ? ('border-color:' + ch.color + '; color:' + ch.color + ';') : '';
+        const col = getChannelColor(ch);
+        const style = active ? ('border-color:' + col + '; color:' + col + ';') : '';
         return '<span class="ch-badge ' + (active ? 'active' : '') + '" style="' + style + '" onclick="toggleChannel(\'' + ch.id + '\')">' + ch.label + '</span>';
     }).join('');
 }
@@ -790,8 +796,9 @@ function drawLogicAnalyzer() {
     const ctx = canvas.getContext('2d');
     const w = canvas.width;
     const h = canvas.height;
+    const isLight = document.body.classList.contains('theme-light');
 
-    ctx.fillStyle = '#040508';
+    ctx.fillStyle = isLight ? '#ffffff' : '#040508';
     ctx.fillRect(0, 0, w, h);
 
     const activeList = ALL_CHANNELS.filter(c => selectedChannelIds.has(c.id));
@@ -806,19 +813,20 @@ function drawLogicAnalyzer() {
         const baseY = 20 + idx * trackHeight;
         const highY = baseY;
         const lowY  = baseY + trackHeight - 12;
+        const chColor = getChannelColor(ch);
 
-        ctx.strokeStyle = '#151c28';
+        ctx.strokeStyle = isLight ? '#e2e8f0' : '#151c28';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(90, lowY);
         ctx.lineTo(w, lowY);
         ctx.stroke();
 
-        ctx.fillStyle = ch.color;
+        ctx.fillStyle = chColor;
         ctx.font = 'bold 11px "JetBrains Mono", monospace';
         ctx.fillText(ch.label, 8, lowY - 3);
 
-        ctx.strokeStyle = ch.color;
+        ctx.strokeStyle = chColor;
         ctx.lineWidth = 2;
         ctx.beginPath();
 
@@ -1442,6 +1450,7 @@ function toggleTheme() {
     localStorage.setItem('avr_theme', isLight ? 'light' : 'dark');
     const txt = document.getElementById('btnThemeText');
     if (txt) txt.textContent = isLight ? 'Темная' : 'Светлая';
+    renderChannelSelector();
     if (activePanels.analyzer) drawLogicAnalyzer();
 }
 
@@ -3220,39 +3229,52 @@ function clearEditor() {
     cpuReset();
 }
 
-/* ================= 25. БАЗА ПРОГРАММ ================= */
-
+/* ================= 25. БАЗА ШАБЛОНОВ ================= */
 
 const PROGRAMS = {
-    template_c: {
-        hint: "Шаблон для программирования на C.",
+    tpl_asm: {
+        hint: "Базовый шаблон <b>AVR Assembler</b> для ATmega328P: инициализация стека, настройка порта и бесконечный цикл.",
+        lang: "asm",
+        code: `; Шаблон программы для ATmega328P (Assembler)
+.include "m328pdef.inc"
+
+.org 0x0000
+    rjmp Reset
+
+Reset:
+    ldi r16, 0x08
+    out SPH, r16
+    ldi r16, 0xFF
+    out SPL, r16
+
+    ; Настройка пина PB5 (светодиод L) на выход
+    sbi DDRB, 5
+
+main:
+    ; Основной цикл программы
+    nop
+    rjmp main`
+    },
+
+    tpl_c: {
+        hint: "Базовый шаблон <b>C (avr-gcc)</b> для ATmega328P: настройка пинов и главный цикл <code>while (1)</code>.",
         lang: "c",
-        code: `#include <avr/io.h>
+        code: `// Шаблон программы для ATmega328P (C)
+#define F_CPU 16000000UL
+#include <avr/io.h>
 
 int main(void)
 {
+    // Настройка пина PB5 (светодиод L) на выход
+    DDRB |= (1 << DDB5);
 
     while (1)
     {
-        // Ваш код здесь   
+        // Основной цикл программы
     }
 }`
-    },
-
-    template_asm: {
-        hint: "Шаблон для программирования на Ассемблере. ",
-        lang: "asm",
-        code: `.include "m328pdef.inc"
-// Ваш код   
-main:
-    nop
-
-loop:
-    rjmp loop`
     }
 };
-
-
 
 function loadSelectedExample() {
     const key = document.getElementById('exampleSelector').value;
@@ -3291,6 +3313,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const highlighting = document.getElementById('highlighting');
     const ghostOverlay = document.getElementById('ghostOverlay');
     const gutter = document.getElementById('lineGutter');
+
+    if (localStorage.getItem('avr_theme') === 'light') {
+        document.body.classList.add('theme-light');
+        const txt = document.getElementById('btnThemeText');
+        if (txt) txt.textContent = 'Темная';
+    }
 
     let inputDebounce = null;
     txtArea.addEventListener('input', () => {
@@ -3362,9 +3390,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     setTimeout(resizeAnalyzerCanvas, 100);
-    if (localStorage.getItem('avr_theme') === 'light') {
-        document.body.classList.add('theme-light');
-        const txt = document.getElementById('btnThemeText');
-        if (txt) txt.textContent = 'Темная';
-    }
 });
