@@ -3058,16 +3058,45 @@ function saveCodeToFile() {
     a.click();
 }
 
+/* ================= ИСПРАВЛЕННАЯ ЗАГРУЗКА С АВТООПРЕДЕЛЕНИЕМ КОДИРОВКИ ================= */
 function loadCodeFromFile(event) {
     const file = event.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (e) => {
-        document.getElementById('asmCode').value = e.target.result;
-        switchLanguageTab(file.name.endsWith('.c') ? 'c' : 'asm');
+        const buffer = e.target.result;
+        let content = '';
+
+        // Пробуем сначала прочесть как современный UTF-8
+        try {
+            const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+            content = utf8Decoder.decode(buffer);
+        } catch (err) {
+            // Если возникла ошибка (старый файл из лабы) — читаем как Windows-1251 (русская)
+            const winDecoder = new TextDecoder('windows-1251');
+            content = winDecoder.decode(buffer);
+        }
+
+        const isC = file.name.endsWith('.c') || content.includes('#include') || content.includes('int main');
+
+        currentLang = isC ? 'c' : 'asm';
+        document.getElementById('btnLangAsm')?.classList.toggle('active', !isC);
+        document.getElementById('btnLangC')?.classList.toggle('active', isC);
+        document.getElementById('editorTitle').textContent = isC ? '⚡ Редактор (C)' : '📝 Редактор (.asm)';
+
+        const txtArea = document.getElementById('asmCode');
+        txtArea.value = content;
+        if (isC) cachedUserCCode = content;
+
+        updateSyntax();
+        cpuReset();
     };
-    reader.readAsText(file);
+    // Считываем как массив байт для точной расшифровки кодировки
+    reader.readAsArrayBuffer(file);
+    event.target.value = '';
 }
+
 
 /* ================= 24. ПОДСВЕТКА И ГУТТЕР ================= */
 
